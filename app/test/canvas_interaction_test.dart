@@ -70,7 +70,7 @@ void main() {
       } catch (_) {}
     });
 
-    Future<void> pump(WidgetTester t) async {
+    Future<void> pump(WidgetTester t, {bool listen = false}) async {
       await t.pumpWidget(MaterialApp(
       localizationsDelegates: kOnoteLocalizations,
       supportedLocales: kOnoteLocales,
@@ -78,7 +78,12 @@ void main() {
           body: SizedBox(
             width: 800,
             height: 600,
-            child: PageCanvas(state: app),
+            child: listen
+                ? ListenableBuilder(
+                    listenable: app,
+                    builder: (context, child) => PageCanvas(state: app),
+                  )
+                : PageCanvas(state: app),
           ),
         ),
       ));
@@ -97,7 +102,7 @@ void main() {
         content: {'text': 'Protected text', 'autoWidth': false},
       ));
       app.setTextBlockLocked(b.id, locked: true);
-      await pump(t);
+      await pump(t, listen: true);
 
       expect(find.byType(SelectionArea), findsOneWidget);
       final lock = find.byTooltip('Text block locked. Click to unlock.');
