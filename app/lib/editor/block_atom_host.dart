@@ -34,7 +34,7 @@ InlineAtomHost blockAtomHost(
       },
       write: (id, content, {required bool pushUndo}) {
         final b = app.blockById(blockId);
-        if (b == null) return;
+        if (b == null || b.textLocked) return;
         if (pushUndo) app.pushUndo();
         final was = InlineAtom.allIn(b.content)[id];
         InlineAtom.putIn(

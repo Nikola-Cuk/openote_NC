@@ -4680,8 +4680,59 @@ class AppState extends ChangeNotifier
   }
 
   // Page content
+  List<Block> _blocks = [];
+  final _protectedTextBlocks = <String, String>{};
+
   @override
-  List<Block> blocks = [];
+  List<Block> get blocks => _blocks;
+
+  set blocks(List<Block> value) {
+    _blocks = value;
+    _protectedTextBlocks
+      ..clear()
+      ..addEntries(value.where((b) => b.textLocked).map(
+          (b) => MapEntry(b.id, jsonEncode(b.toJson()))));
+  }
+
+  void setTextBlockLocked(String id, {required bool locked}) {
+    final b = blockById(id);
+    if (b == null || b.type != BlockType.text || b.textLocked == locked) {
+      return;
+    }
+    if (locked) {
+      if (editingBlockId == id) {
+        clearActiveEditor(id);
+        editingBlockId = null;
+        pendingCaretGlobal = null;
+        if (pendingEmptyBlockId == id) pendingEmptyBlockId = null;
+      }
+      b.content[Block.textLockKey] = true;
+    } else {
+      _protectedTextBlocks.remove(id);
+      b.content.remove(Block.textLockKey);
+    }
+    b.updatedAt = nowMs();
+    if (locked) _protectedTextBlocks[id] = jsonEncode(b.toJson());
+    markDirty();
+  }
+
+  void _preserveLockedTextBlocks(List<Block> target) {
+    if (_protectedTextBlocks.isEmpty) return;
+    final positions = {
+      for (var i = 0; i < target.length; i++) target[i].id: i,
+    };
+    for (final entry in _protectedTextBlocks.entries) {
+      final i = positions[entry.key];
+      if (i != null && jsonEncode(target[i].toJson()) == entry.value) continue;
+      final block = Block.fromJson(
+          jsonDecode(entry.value) as Map<String, dynamic>);
+      if (i == null) {
+        target.add(block);
+      } else {
+        target[i] = block;
+      }
+    }
+  }
   PageProps pageProps = PageProps();
 
   /// The block with this id on the open page, or null.
@@ -4956,7 +5007,7 @@ class AppState extends ChangeNotifier
     final b = blocks
         .where((x) => x.id == (editingBlockId ?? selectedBlockId))
         .firstOrNull;
-    if (b == null || b.type != BlockType.text) return;
+    if (b == null || b.type != BlockType.text || b.textLocked) return;
     final idx = line ?? _caretLine(b);
     pushUndo();
     final tags = [...NoteTag.listFrom(b.content)];
@@ -4982,7 +5033,7 @@ class AppState extends ChangeNotifier
   /// Flip a to-do tag's completion.
   void setTagChecked(String blockId, int line, bool checked) {
     final b = blocks.where((x) => x.id == blockId).firstOrNull;
-    if (b == null) return;
+    if (b == null || b.textLocked) return;
     pushUndo();
     final tags = [
       for (final t in NoteTag.listFrom(b.content))
@@ -5016,6 +5067,7 @@ class AppState extends ChangeNotifier
     if (nb == null) return false;
 
     List<NoteTag>? apply(Block b) {
+      if (b.textLocked) return null;
       final tags = NoteTag.listFrom(b.content);
       if (!tags.any((t) => t.line == line && t.kind == kind)) return null;
       return [
@@ -7308,6 +7360,7 @@ class AppState extends ChangeNotifier
   }
 
   void cutSelectedBlocks() {
+    if (selectionHasLockedText) return;
     copySelectedBlocks();
     removeSelected();
   }
@@ -7472,6 +7525,7 @@ class AppState extends ChangeNotifier
       // they would join the group they were copied from, and the next drag of
       // the original would walk the copies across the page with it. Copy part
       // of a group and the paste is a group of just that part.
+      if (fresh.textLocked) fresh.content.remove(Block.textLockKey);
       final g = fresh.groupId;
       if (g != null) fresh.groupId = oldToNewGroup.putIfAbsent(g, newId);
       fresh.x = at?.dx ?? src.x + 28;
@@ -7532,7 +7586,7 @@ class AppState extends ChangeNotifier
 
   void bringToFront(String id) {
     final b = blocks.where((b) => b.id == id).firstOrNull;
-    if (b == null || blocks.isEmpty) return;
+    if (b == null || b.textLocked) return;
     pushUndo();
     b.z = blocks.map((e) => e.z).reduce(math.max) + 1;
     updateBlock(b);
@@ -7540,7 +7594,7 @@ class AppState extends ChangeNotifier
 
   void sendToBack(String id) {
     final b = blocks.where((b) => b.id == id).firstOrNull;
-    if (b == null || blocks.isEmpty) return;
+    if (b == null || b.textLocked) return;
     pushUndo();
     b.z = blocks.map((e) => e.z).reduce(math.min) - 1;
     updateBlock(b);
@@ -9081,6 +9135,7 @@ class AppState extends ChangeNotifier
   /// strokes that disagree re-fit the next time anything measures them,
   /// likely the "things jump after deleting something" too.
   void clampBlockToPage(Block b) {
+    if (b.textLocked) return;
     final x0 = b.x, y0 = b.y;
     if (b.x < 0) b.x = 0;
     if (b.y < contentTop) b.y = contentTop;
@@ -9927,6 +9982,11 @@ class AppState extends ChangeNotifier
       for (final b in (j['blocks'] as List))
         Block.fromJson((b as Map).cast<String, dynamic>())
     ];
+    // Undo history describes content edits. The current lock state stays in force.
+    for (final b in restored) {
+      if (b.textLocked) b.content.remove(Block.textLockKey);
+    }
+    _preserveLockedTextBlocks(restored);
     final wasEditing = editingBlockId;
     _carryCardSchedules(blocks, restored);
     blocks = restored;
@@ -9942,7 +10002,7 @@ class AppState extends ChangeNotifier
     // build for exactly this, and `docRevision` below replaces the element
     // so it does.
     editingBlockId = restored.any(
-            (b) => b.id == wasEditing && b.type == BlockType.text)
+            (b) => b.id == wasEditing && b.type == BlockType.text && !b.textLocked)
         ? wasEditing
         : null;
     if (editingBlockId != null) {
@@ -10509,6 +10569,10 @@ class AppState extends ChangeNotifier
   }
 
   void updateBlock(Block b) {
+    if (_protectedTextBlocks.containsKey(b.id)) {
+      _preserveLockedTextBlocks(blocks);
+      return;
+    }
     b.updatedAt = nowMs();
     markDirty(); // which notifies
   }
@@ -10569,6 +10633,7 @@ class AppState extends ChangeNotifier
   }
 
   void removeBlock(String id, {bool recordUndo = true}) {
+    if (blockById(id)?.textLocked ?? false) return;
     if (recordUndo) pushUndo();
     blocks.removeWhere((b) => b.id == id);
     selectedIds.remove(id);
@@ -10578,8 +10643,11 @@ class AppState extends ChangeNotifier
     markDirty(); // which notifies
   }
 
+  bool get selectionHasLockedText =>
+      blocks.any((b) => b.textLocked && selectedIds.contains(b.id));
+
   void removeSelected() {
-    if (selectedIds.isEmpty) return;
+    if (selectedIds.isEmpty || selectionHasLockedText) return;
     pushUndo();
     blocks.removeWhere((b) => selectedIds.contains(b.id));
     selectedIds.clear();
@@ -10607,6 +10675,7 @@ class AppState extends ChangeNotifier
       // make the next drag of that group carry the duplicate off with it.
       content: jsonDecode(jsonEncode(src.content)) as Map<String, dynamic>,
     );
+    if (fresh.textLocked) fresh.content.remove(Block.textLockKey);
     if (fresh.type == BlockType.ink) {
       for (final sj in (fresh.content['strokes'] as List)) {
         (sj as Map)['id'] = newId();
@@ -10677,6 +10746,7 @@ class AppState extends ChangeNotifier
   /// then is Ungroup — and because selection is group-closed, "every member
   /// shares one id" is the same statement as "this is that group entire".
   bool get canGroup {
+    if (selectionHasLockedText) return false;
     final members = _groupableSelection();
     if (members.length < 2) return false;
     final g = members.first.groupId;
@@ -10684,7 +10754,7 @@ class AppState extends ChangeNotifier
   }
 
   bool get canUngroup =>
-      blocks.any((b) => selectedIds.contains(b.id) && b.groupId != null);
+      !selectionHasLockedText && blocks.any((b) => selectedIds.contains(b.id) && b.groupId != null);
 
   /// Join the selection into one group.
   ///
@@ -10727,7 +10797,7 @@ class AppState extends ChangeNotifier
       if (g != null) count[g] = (count[g] ?? 0) + 1;
     }
     for (final b in blocks) {
-      if (b.groupId != null && count[b.groupId] == 1) {
+      if (!b.textLocked && b.groupId != null && count[b.groupId] == 1) {
         b.groupId = null;
         b.updatedAt = nowMs();
       }
@@ -10735,6 +10805,9 @@ class AppState extends ChangeNotifier
   }
 
   void select(String? id, {bool edit = false, bool additive = false}) {
+    if (edit && id != null && (blockById(id)?.textLocked ?? false)) {
+      edit = false;
+    }
     // The caret token is for the selection being made RIGHT NOW. Expiring it
     // here rather than trusting one widget type to consume it means a click
     // that never opens a text editor can't leave it lying around for the next
@@ -10791,7 +10864,7 @@ class AppState extends ChangeNotifier
   /// written on it.
   void moveSelectedBy(double dx, double dy) {
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
-      if (b.locked) continue;
+      if (b.locked || b.textLocked) continue;
       b.x += dx;
       b.y += dy;
       _translateInk(b, dx, dy);
@@ -10804,7 +10877,7 @@ class AppState extends ChangeNotifier
   /// margin so everything stays neat (matches the smart initial placement).
   void settleSelected() {
     for (final b in blocks.where((b) => selectedIds.contains(b.id))) {
-      if (b.locked) continue; // never moved, so nothing to settle
+      if (b.locked || b.textLocked) continue; // never moved, so nothing to settle
       if (b.type != BlockType.ink) {
         if ((b.x - pageLeftMargin).abs() < 26) {
           b.x = pageLeftMargin;
@@ -11146,6 +11219,7 @@ class AppState extends ChangeNotifier
   /// is one spare rebuild of everything on the page per edit — and per POINTER
   /// SAMPLE on the one path that calls this in a loop, [moveSelectedBy].
   void markDirty() {
+    _preserveLockedTextBlocks(blocks);
     _dirty = true;
     // Cheap counter, not a rebuild: it lets the open page's flashcards be
     // rederived once per edit, so tagging a line produces a card immediately
@@ -11303,6 +11377,7 @@ class AppState extends ChangeNotifier
       // container's `blobs` table and emits no `blob.put`, which would leave
       // the log holding refs it cannot resolve. That is invisible locally and
       // total on another device.
+      _preserveLockedTextBlocks(blocks);
       final toSave = InkStorage.persistAll(
           blocks, (bytes) => importBlob(nb, bytes, inkMimeType));
       // The engine owns persistence: version snapshot (throttled, SYNC-8) + the

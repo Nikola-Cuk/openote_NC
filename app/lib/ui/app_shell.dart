@@ -651,7 +651,11 @@ class _AppShellState extends State<AppShell> {
 
     if (ctrl) {
       if (k == LogicalKeyboardKey.keyC) {
-        if (app.selectedIds.isEmpty) return false;
+        final focused = FocusManager.instance.primaryFocus?.context;
+        if (focused?.findAncestorWidgetOfExactType<SelectionArea>() != null ||
+            app.selectedIds.isEmpty) {
+          return false;
+        }
         app.copySelectedBlocks();
         return true;
       }
@@ -1103,11 +1107,11 @@ class _AppShellState extends State<AppShell> {
     if (app.selectedIds.length != 1 || app.editingBlockId != null) {
       return false;
     }
-    final t = app.blocks
-        .where((x) => x.id == app.selectedBlockId)
-        .firstOrNull
-        ?.type;
-    return t == BlockType.text || t == BlockType.code;
+    final id = app.selectedBlockId;
+    final block = id == null ? null : app.blockById(id);
+    return block != null &&
+        !block.textLocked &&
+        (block.type == BlockType.text || block.type == BlockType.code);
   }
 
   /// Type-through (Eric: "if i tap a key on my keyboard it should put me
@@ -1131,6 +1135,7 @@ class _AppShellState extends State<AppShell> {
     final b =
         app.blocks.where((x) => x.id == app.selectedBlockId).firstOrNull;
     if (b == null ||
+        b.textLocked ||
         (b.type != BlockType.text && b.type != BlockType.code)) {
       return KeyEventResult.ignored;
     }

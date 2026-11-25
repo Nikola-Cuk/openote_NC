@@ -95,6 +95,7 @@ UpdateInfo? parseLatestRelease(
 
 /// The launch-time check. Null on ANY failure, by design.
 Future<UpdateInfo?> fetchLatestUpdate({String current = kAppVersion}) async {
+  if (const bool.fromEnvironment('OPENOTE_CUSTOM_BUILD')) return null;
   try {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 10);

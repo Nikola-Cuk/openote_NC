@@ -265,13 +265,20 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       // reasoning already kept "Text box" off this menu and, later, off the
       // Insert ribbon.
       _item('copy', Icons.copy_outlined, 'Copy', shortcut: 'Ctrl+C'),
-      _item('cut', Icons.cut_outlined, 'Cut', shortcut: 'Ctrl+X'),
+      _item('cut', Icons.cut_outlined, 'Cut',
+          enabled: !app.selectionHasLockedText, shortcut: 'Ctrl+X'),
       _item('duplicate', Icons.copy_all_outlined, 'Duplicate',
           shortcut: 'Ctrl+D'),
       // An imported PDF slide is locked so the pen can't shove it around.
       // Without a way back out, "won't move" reads as a broken control rather
       // than a state — and the slides now land on the user's own page.
-      _item(
+      if (b.type == BlockType.text)
+        _item(
+            'text-lock',
+            b.textLocked ? Icons.lock_open_outlined : Icons.lock_outline,
+            b.textLocked ? 'Unlock Text Block' : 'Lock Text Block'),
+      if (!b.textLocked)
+        _item(
           'lock',
           b.locked ? Icons.lock_open_outlined : Icons.lock_outline,
           b.locked ? 'Unlock' : 'Lock in place'),
@@ -291,8 +298,9 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       // The box itself gets attributes, starting with a fill. The picker
       // returns RRGGBBAA, so transparency comes with it — a translucent
       // highlight over a diagram is half of why anyone tints a box.
-      _item('bg', Icons.format_color_fill, 'Background colour…'),
-      if (b.content['bg'] != null)
+      if (!b.textLocked)
+        _item('bg', Icons.format_color_fill, 'Background colour…'),
+      if (!b.textLocked && b.content['bg'] != null)
         _item('bg-clear', Icons.format_color_reset_outlined,
             'Remove background'),
       // A slide is a page of a stored PDF; the viewer is where its text is
@@ -329,14 +337,20 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       if (app.canUngroup)
         _item('ungroup', Icons.scatter_plot_outlined, 'Ungroup',
             shortcut: 'Ctrl+Shift+G'),
-      _item('front', Icons.flip_to_front, 'Bring to front'),
-      _item('back', Icons.flip_to_back, 'Send to back'),
+      if (!b.textLocked) _item('front', Icons.flip_to_front, 'Bring to front'),
+      if (!b.textLocked) _item('back', Icons.flip_to_back, 'Send to back'),
       const PopupMenuDivider(),
-      _item('delete', Icons.delete_outline, 'Delete', shortcut: 'Del'),
+      _item('delete', Icons.delete_outline, 'Delete',
+          enabled: !app.selectionHasLockedText, shortcut: 'Del'),
     ],
   );
   switch (action) {
+    case 'text-lock':
+      if (identical(app.blockById(b.id), b)) {
+        app.setTextBlockLocked(b.id, locked: !b.textLocked);
+      }
     case 'lock':
+      if (b.textLocked) return;
       app.pushUndo();
       if (b.locked) {
         b.content.remove('locked');
@@ -362,13 +376,14 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
         final hex = await showOnoteColorPicker(context, app,
             initial: b.content['bg'] as String?,
             title: 'Background colour');
-        if (hex != null) {
+        if (hex != null && !b.textLocked && identical(app.blockById(b.id), b)) {
           app.pushUndo();
           b.content['bg'] = hex;
           app.updateBlock(b);
         }
       }
     case 'bg-clear':
+      if (b.textLocked) return;
       app.pushUndo();
       b.content.remove('bg');
       app.updateBlock(b);

@@ -283,7 +283,8 @@ class _TextBlockViewState extends State<TextBlockView> {
 
   OnoteTextEditor get _engine => OnoteEditors.active;
 
-  bool get editing => widget.app.editingBlockId == widget.block.id;
+  bool get editing => !widget.block.textLocked &&
+      widget.app.editingBlockId == widget.block.id;
 
   /// F-3 fix: exit cleanup runs on the STATE transition (editing → not).
   ///
@@ -325,7 +326,7 @@ class _TextBlockViewState extends State<TextBlockView> {
     // it may not write to the block — so it asks, and the answer is here.
     session.requestExtraWidth = (extra) {
       final b = widget.block;
-      if (extra <= 0) return;
+      if (extra <= 0 || b.textLocked) return;
       // **Do not take an auto-width box away from somebody for one squeezed
       // frame.** A table asks for room the instant it is drawn narrower than
       // it wants, which happens for a frame whenever it grows — and the
@@ -368,6 +369,7 @@ class _TextBlockViewState extends State<TextBlockView> {
         block: widget.block,
         app: widget.app,
         onChanged: (v) {
+          if (widget.block.textLocked) return;
           // The first real edit ends the OneNote-style pending caret: chrome
           // and arrow-key page navigation are for BEFORE typing starts, not
           // for a box that has since been typed into and emptied again.

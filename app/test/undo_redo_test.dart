@@ -29,6 +29,58 @@ Block _text(String s, {double x = 10, double y = 20}) =>
     Block(type: BlockType.text, x: x, y: y, content: {'text': s});
 
 void main() {
+  test('text block lock survives serialization and legacy blocks stay editable', () {
+    final a = _text('protected');
+    final b = _text('editable');
+    final app = _app()..blocks = [a, b];
+    expect(Block.fromJson(b.toJson()).textLocked, isFalse);
+
+    app.setTextBlockLocked(a.id, locked: true);
+    final reopened = Block.fromJson(a.toJson());
+    expect(reopened.textLocked, isTrue);
+    expect(b.textLocked, isFalse);
+
+    app.blocks = [reopened, b];
+    app.select(reopened.id, edit: true);
+    expect(app.editingBlockId, isNull);
+    app.moveSelectedBy(100, 100);
+    app.cutSelectedBlocks();
+    app.removeBlock(reopened.id);
+    expect(app.blockById(reopened.id)?.x, 10);
+
+    app.select(b.id, edit: true);
+    expect(app.editingBlockId, b.id);
+    app.setTextBlockLocked(reopened.id, locked: false);
+    app.select(reopened.id, edit: true);
+    expect(app.editingBlockId, reopened.id);
+  });
+
+  test('undo and redo preserve a locked block and still edit its neighbour', () {
+    final a = _text('before');
+    final b = _text('neighbour');
+    final app = _app()..blocks = [a, b];
+    app.pushUndo();
+    a.content['text'] = 'locked version';
+    b.content['text'] = 'changed neighbour';
+    app.setTextBlockLocked(a.id, locked: true);
+
+    a.content['text'] = 'bypassed an editor';
+    app.markDirty();
+    expect(app.blockById(a.id)?.content['text'], 'locked version');
+
+    app.undo();
+    expect(app.blockById(a.id)?.content['text'], 'locked version');
+    expect(app.blockById(b.id)?.content['text'], 'neighbour');
+    app.redo();
+    expect(app.blockById(a.id)?.textLocked, isTrue);
+    expect(app.blockById(b.id)?.content['text'], 'changed neighbour');
+
+    app.setTextBlockLocked(a.id, locked: false);
+    app.undo();
+    app.redo();
+    expect(app.blockById(a.id)?.textLocked, isFalse);
+  });
+
   test('undo restores the pre-change block list', () {
     final app = _app()..blocks = [_text('first')];
     app.addBlock(_text('second'));

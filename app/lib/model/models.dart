@@ -423,6 +423,12 @@ class Block {
   /// about where a thing sits.
   bool get locked => content['locked'] == true;
 
+  static const textLockKey = 'openoteNC.readOnly';
+
+  /// User-controlled read-only state for a text block.
+  bool get textLocked =>
+      type == BlockType.text && content[textLockKey] == true;
+
   static const _known = {
     'id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'z', 'placement', 'frameId',
     'groupId', 'absorbedIds', 'access', 'createdAt', 'updatedAt', 'content',

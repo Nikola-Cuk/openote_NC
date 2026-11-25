@@ -50,7 +50,8 @@ class LiveMarkdownEngine extends OnoteTextEditor {
   Widget buildReadOnly(BuildContext context, TextSurface s) {
     final app = s.app;
     final block = s.block;
-    return Padding(
+    final readOnly = block.textLocked;
+    final view = Padding(
       padding: s.inset,
       child: MarkdownView(
         text: deserialize(block.content),
@@ -83,22 +84,24 @@ class LiveMarkdownEngine extends OnoteTextEditor {
         // caret where the pointer is.
         atomHost: blockAtomHost(app, block.id,
             editable: false,
-            onOpen: (id, row, col) {
+            onOpen: readOnly ? null : (id, row, col) {
               app.pendingAtomCell =
                   (blockId: block.id, atomId: id, row: row, col: col);
               app.select(block.id, edit: true);
             }),
         // Tag markers (TEXT-5) hang in the line's gutter.
         tagsByLine: NoteTag.byLine(block.content),
-        onToggleTag: (line, checked) =>
+        onToggleTag: readOnly ? null : (line, checked) =>
             app.setTagChecked(block.id, line, checked),
-        onToggleCheckbox: (newText) {
+        onToggleCheckbox: readOnly ? null : (newText) {
+          if (block.textLocked) return;
           app.pushUndo();
           serialize(block.content, newText);
           app.updateBlock(block);
         },
       ),
     );
+    return readOnly ? SelectionArea(child: view) : view;
   }
 
   @override
@@ -124,6 +127,7 @@ class LiveMarkdownEngine extends OnoteTextEditor {
       // one call, made before the text is saved, so what is written is always
       // a block whose references and payloads agree.
       onChanged: (text) {
+        if (block.textLocked) return;
         reconcileBlockAtoms(app, block.id, text);
         onChanged(text);
       },

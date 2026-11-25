@@ -199,7 +199,7 @@ class _BlockViewState extends State<BlockView> {
     // Only for the types that cannot be edited, which is every kind of slide.
     // Locking a text box is locking where it sits; typing in it is not moving
     // it, and taking that away is not what the menu item offers.
-    if (_locked && !_editableType) return;
+    if (b.textLocked || (_locked && !_editableType)) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
     // **A grouped block answers for its group first.** Clicking one member
     // picks the whole group up, which is the point of having joined it; a
@@ -293,7 +293,7 @@ class _BlockViewState extends State<BlockView> {
     // or typed into. Leaving the press to the canvas is what lets a marquee
     // start on top of a slide; see `_selectDown`, which still leaves the
     // CLICK to the tap handler below so the slide can be selected.
-    if (!_locked) app.claimedPointers.add(e.pointer);
+    if (!_locked || b.textLocked) app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
     _pressOnChrome = _isChromeAt(e.position);
     _pressTookGroup = _groupTakesGesture;
@@ -428,7 +428,7 @@ class _BlockViewState extends State<BlockView> {
     // A pinch has taken over: two fingers are navigating, and one of them
     // happens to be on this bar. Moving the box as well would move it under
     // the zoom. See [AppState.pinching].
-    if (app.pinching) return;
+    if (app.pinching || _locked) return;
     if (!_dragUndoPushed) {
       app.pushUndo();
       _dragUndoPushed = true;
@@ -562,6 +562,10 @@ class _BlockViewState extends State<BlockView> {
                         ? Theme.of(context).colorScheme.onPrimary
                         : OnoteColors.graphite400),
                 const Spacer(),
+                if (b.type == BlockType.text)
+                  _barButton(context, Icons.lock_open_outlined,
+                      'Text block unlocked. Click to lock.',
+                      () => app.setTextBlockLocked(b.id, locked: true), live),
                 if (primary) ...[
                   _barButton(context, Icons.copy_all_outlined,
                       'Duplicate (Ctrl+D)', () => app.duplicateBlock(b.id), live),
@@ -616,7 +620,7 @@ class _BlockViewState extends State<BlockView> {
     return t.trim().isEmpty ? '${b.type.name} block' : t;
   }
 
-  bool get _locked => b.locked;
+  bool get _locked => b.locked || b.textLocked;
 
   /// Height is only draggable for blocks that own one. A text block's height
   /// comes from its text, so a height handle there would fight the content.
@@ -640,6 +644,7 @@ class _BlockViewState extends State<BlockView> {
   /// user put it relative to the box.
   void _resizeBy(DragUpdateDetails d,
       {required bool width, required bool height}) {
+    if (_locked) return;
     if (!_resizeUndoPushed) {
       app.pushUndo();
       _resizeUndoPushed = true;
@@ -711,7 +716,8 @@ class _BlockViewState extends State<BlockView> {
     // The measurement is memoised, so the read-mode cost is a map lookup.
     // (Imported boxes are `autoWidth: false` — OneNote gave them a real
     // width — so this does not disturb an imported layout.)
-    if (b.type == BlockType.text && b.content['autoWidth'] != false) {
+    if (b.type == BlockType.text && !b.textLocked &&
+        b.content['autoWidth'] != false) {
       displayW = TextBlockView.autoWidth(b, dark: dark);
       // "It should automatically stop growing before going off the screen."
       // A box near the right edge stops at the viewport and PINS there —
@@ -808,7 +814,7 @@ class _BlockViewState extends State<BlockView> {
       onExit: (_) => _setHover(body: false),
       // An I-beam over a group nobody is holding would promise a caret that
       // the first click does not give — it selects the group instead.
-      cursor: _editableType && !editing && !_groupTakesGesture
+      cursor: _editableType && !b.textLocked && !editing && !_groupTakesGesture
           ? SystemMouseCursors.text
           : MouseCursor.defer,
       child: GestureDetector(
@@ -957,6 +963,21 @@ class _BlockViewState extends State<BlockView> {
                           onExit: (_) => _setHover(chrome: false),
                           child: const SizedBox.expand(),
                         ),
+                ),
+              if (b.textLocked)
+                Positioned(
+                  right: _kChromePad,
+                  top: 0,
+                  height: _kBarH,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28),
+                    tooltip: 'Text block locked. Click to unlock.',
+                    iconSize: 13,
+                    onPressed: () =>
+                        app.setTextBlockLocked(b.id, locked: false),
+                    icon: const Icon(Icons.lock_outline),
+                  ),
                 ),
               // Resize handles. Now that the chrome sits INSIDE the render
               // box, each handle's full visual extent is grabbable instead of
