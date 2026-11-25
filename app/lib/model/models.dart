@@ -198,6 +198,68 @@ double? aspectHeight(Block b) {
   return b.w * nh / nw;
 }
 
+enum DiagramRoute { straight, curved, wavy, elbow }
+
+enum DiagramStroke { solid, dashed, dotted, doubleLine }
+
+class DiagramConnection {
+  DiagramConnection({
+    String? id,
+    required this.from,
+    required this.to,
+    this.label = '',
+    this.icon = '',
+    this.route = DiagramRoute.straight,
+    this.stroke = DiagramStroke.solid,
+  }) : id = id ?? newId();
+
+  final String id;
+  final String from;
+  final String to;
+  final String label;
+  final String icon;
+  final DiagramRoute route;
+  final DiagramStroke stroke;
+
+  DiagramConnection? remap(Map<String, String> ids) {
+    final start = ids[from], end = ids[to];
+    if (start == null || end == null) return null;
+    return DiagramConnection(
+        from: start, to: end, label: label, icon: icon,
+        route: route, stroke: stroke);
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'from': from,
+        'to': to,
+        if (label.isNotEmpty) 'label': label,
+        if (icon.isNotEmpty) 'icon': icon,
+        'route': route.name,
+        'stroke': stroke.name,
+      };
+
+  static DiagramConnection? fromJson(Object? data) {
+    if (data is! Map) return null;
+    final id = data['id'], from = data['from'], to = data['to'];
+    if (id is! String || from is! String || to is! String || from == to) {
+      return null;
+    }
+    final label = data['label'], icon = data['icon'];
+    return DiagramConnection(
+      id: id,
+      from: from,
+      to: to,
+      label: label is String ? label : '',
+      icon: icon is String ? icon : '',
+      route: DiagramRoute.values.where((v) => v.name == data['route'])
+              .firstOrNull ?? DiagramRoute.straight,
+      stroke: DiagramStroke.values.where((v) => v.name == data['stroke'])
+              .firstOrNull ?? DiagramStroke.solid,
+    );
+  }
+}
+
 class PageProps {
   PageProps({
     this.background = 'blank',
@@ -229,6 +291,23 @@ class PageProps {
   bool landscape;
 
   bool get isPaged => layout == 'paged';
+
+  static const _diagramKey = 'openoteNC.diagramConnections';
+
+  List<DiagramConnection> get diagramConnections {
+    final saved = unknownFields[_diagramKey];
+    if (saved is! List) return const [];
+    return saved.map(DiagramConnection.fromJson).whereType<DiagramConnection>()
+        .toList();
+  }
+
+  set diagramConnections(List<DiagramConnection> connections) {
+    if (connections.isEmpty) {
+      unknownFields.remove(_diagramKey);
+    } else {
+      unknownFields[_diagramKey] = connections.map((edge) => edge.toJson()).toList();
+    }
+  }
 
   /// The sheet, honouring orientation.
   PaperSize get paper {
@@ -422,6 +501,11 @@ class Block {
   /// A locked box that can be edited can still be typed into: locking is
   /// about where a thing sits.
   bool get locked => content['locked'] == true;
+
+  static const diagramCardKey = 'openoteNC.diagramCard';
+
+  bool get isDiagramCard =>
+      type == BlockType.embed && content[diagramCardKey] == true;
 
   static const textLockKey = 'openoteNC.readOnly';
 

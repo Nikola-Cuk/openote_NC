@@ -65,13 +65,13 @@ void main() {
   }
 
   group('the catalog itself', () {
-    testWidgets('is eleven things, grouped for the menu', (tester) async {
+    testWidgets('groups the insert tools for the menu', (tester) async {
       final l = await _translations(tester);
       expect(kInsertGroups.map((g) => g.title(l)).toList(),
           ['Write', 'Bring in', 'Link up']);
       // Twelve until page templates were removed in favour of duplicating a
       // page: a layout is not a thing you INSERT at a point anyway.
-      expect(kInsertItems.length, 11);
+      expect(kInsertItems.length, 12);
     });
 
     test('the ribbon is one row, in the order the owner asked for', () {
@@ -87,7 +87,7 @@ void main() {
       // picture.
       expect(kInsertRibbon.map((i) => i.id).toList(), [
         'equation', 'code', 'pdf', 'table', 'image', 'video',
-        'file', 'flashcard', 'board', 'pagelink', 'portal',
+        'file', 'flashcard', 'board', 'pagelink', 'portal', 'diagram-card',
       ]);
     });
 
@@ -114,7 +114,7 @@ void main() {
       final menu = kMenuGroups.expand((g) => g.items).map((i) => i.id).toSet();
       expect(kInsertItems.map((i) => i.id), contains('flashcard'));
       expect(menu.contains('flashcard'), isFalse);
-      expect(menu.length, 10);
+      expect(menu.length, 11);
     });
 
     // Through `L`, because the catalog's words moved into the .arb: the
@@ -430,7 +430,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('says the same ten things the ribbon does', (tester) async {
+    testWidgets('includes every canvas insert tool', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final l = await _translations(tester);
       await open(tester);
@@ -470,6 +470,23 @@ void main() {
               'Three of those rows are second choices set in under the '
               'command they belong to — the ribbon hides them behind a small '
               'arrow, and a menu has no room for one');
+      app.cancelPendingSave();
+    });
+
+    testWidgets('diagram card opens a separate editable page', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final host = app.pageId;
+      await open(tester);
+      await tester.tap(find.text('Diagram card'));
+      await tester.pumpAndSettle();
+
+      final card = app.blocks.single;
+      expect(card.isDiagramCard, isTrue);
+      final ref = card.content['ref'] as Map;
+      final page = app.node(ref['pageId'] as String);
+      expect(page?.title, 'Card canvas 1');
+      expect(page?.id, isNot(host));
+      expect(app.pageId, host);
       app.cancelPendingSave();
     });
 

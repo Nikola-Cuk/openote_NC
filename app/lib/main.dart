@@ -134,10 +134,13 @@ class _OpenoteBootState extends State<OpenoteBoot> {
   (Object, StackTrace)? _error;
   _WorkspaceBlocked? _blocked;
   AppLifecycleListener? _lifecycle;
+  SingleInstance? _instance;
+  bool _movingWorkspace = false;
 
   @override
   void initState() {
     super.initState();
+    _instance = widget.instance;
     _open();
   }
 
@@ -163,14 +166,18 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       await app.init(notebookPath: widget.notebookPath);
       // Every LATER double-click arrives here, as a request file the new
       // process left behind before exiting. See core/single_instance.dart.
-      widget.instance?.listen(app.openNotebookFile);
+      if (Capabilities.has(Capability.localFiles)) {
+        app.onChangeWorkspace = _changeWorkspace;
+      }
+      _instance?.listen(app.openNotebookFile);
       // Persist before the process goes away. Autosave is debounced, so without
       // this the last edits before a window close were silently lost — and the
       // SQLite handles never got a clean close (no WAL checkpoint).
       _lifecycle = AppLifecycleListener(
         onExitRequested: () async {
-          await app.shutdown();
-          await widget.instance?.dispose();
+          if (_movingWorkspace) return AppExitResponse.cancel;
+          await _app?.shutdown();
+          await _instance?.dispose();
           return AppExitResponse.exit;
         },
       );
@@ -186,15 +193,56 @@ class _OpenoteBootState extends State<OpenoteBoot> {
     // Stops the request poll. The lock itself is released by the OS when the
     // process goes, so this is about not leaving a timer behind in a hot
     // reload rather than about correctness on exit.
-    widget.instance?.dispose();
+    _instance?.dispose();
     _app?.dispose();
     super.dispose();
+  }
+
+  Future<void> _changeWorkspace(String path) async {
+    final previous = _app;
+    if (previous == null || _movingWorkspace) return;
+    _movingWorkspace = true;
+    SingleInstance? destinationLock;
+    AppState? replacement;
+    try {
+      final source = Directory(previous.workspacePath);
+      final destination =
+          await Repository.workspaceCopyDestination(source, path);
+      await previous.prepareWorkspaceCopy();
+      destinationLock = await SingleInstance.claimAt(destination.path);
+      if (destinationLock == null || !destinationLock.holdsLock) {
+        throw StateError('Openote could not reserve the selected folder.');
+      }
+      await Repository.copyWorkspaceTo(source, destination);
+      final repo = await Repository.openAt(destination);
+      final app = AppState(repo);
+      replacement = app;
+      await app.init();
+      if (!mounted) return;
+      await Repository.rememberWorkspaceLocation(destination);
+
+      final oldLock = _instance;
+      _instance = destinationLock;
+      destinationLock = null;
+      app.onChangeWorkspace = _changeWorkspace;
+      _instance?.listen(app.openNotebookFile);
+      replacement = null;
+      setState(() => _app = app);
+      await WidgetsBinding.instance.endOfFrame;
+      previous.dispose();
+      await oldLock?.dispose();
+    } finally {
+      replacement?.dispose();
+      await destinationLock?.dispose();
+      _movingWorkspace = false;
+    }
   }
 
   /// Copy the workspace somewhere writable, then carry on into the app.
   Future<String?> _moveWorkspace(_WorkspaceBlocked blocked) async {
     try {
       await Repository.copyWorkspaceTo(blocked.dir, blocked.safer!);
+      await Repository.rememberWorkspaceLocation(blocked.safer!);
       if (mounted) setState(() => _blocked = null);
       await _open();
       return null;
@@ -212,7 +260,7 @@ class _OpenoteBootState extends State<OpenoteBoot> {
     final err = _error;
     if (err != null) return _StartupError(error: err.$1, stack: err.$2);
     final app = _app;
-    if (app != null) return OpenoteApp(app: app);
+    if (app != null) return OpenoteApp(key: ObjectKey(app), app: app);
     return MaterialApp(
       title: 'Openote',
       localizationsDelegates: kOnoteLocalizations,

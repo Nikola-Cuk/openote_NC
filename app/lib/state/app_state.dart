@@ -9283,7 +9283,7 @@ class AppState extends ChangeNotifier
         src.id == pageId ? pageProps : (await engine.loadPage(nb, src.id)).props;
     // A copy: `PageProps` is mutable, and the new page must not share the
     // object the page it was modelled on is still using.
-    return PageProps.fromJson(from.toJson());
+    return PageProps.fromJson(from.toJson())..diagramConnections = [];
   }
 
   /// Give the page just created in [sectionId] the shape of its neighbour.
@@ -9294,6 +9294,83 @@ class AppState extends ChangeNotifier
       String newPageId) async {
     final shape = await _shapeToInherit(sectionId, filedAfter);
     if (shape != null) importPage(notebookId!, newPageId, const <Block>[], shape);
+  }
+
+  void addDiagramCard(Offset at) {
+    final nb = notebookId;
+    final parent = pageId == null ? null : node(pageId!);
+    if (nb == null || parent == null || notebookIsReadOnly(nb)) return;
+    final section = parent.parentId;
+    if (section == null) return;
+    final pages = pagesOf(section);
+    final position = pages.indexWhere((page) => page.id == parent.id);
+    if (position < 0) return;
+    final existingTitles = pages.map((page) => page.title).toSet();
+    var number = 1;
+    while (existingTitles.contains('Card canvas $number')) {
+      number++;
+    }
+    final canvasPage = TreeNode(
+      kind: NodeKind.page,
+      parentId: section,
+      title: 'Card canvas $number',
+      level: (parent.level + 1).clamp(0, 2),
+      position: _nextPosition(),
+    );
+    final ordered = [...pages]..insert(position + 1, canvasPage);
+    var sequence = nowMs();
+    for (final page in ordered) {
+      page.position = 'a${(sequence++).toString().padLeft(15, '0')}';
+      _putNode(nb, page);
+    }
+    reloadNodes();
+    final card = addBlock(Block(
+      type: BlockType.embed,
+      x: at.dx,
+      y: at.dy,
+      w: 320,
+      h: 200,
+      content: {
+        Block.diagramCardKey: true,
+        'ref': {
+          'notebookId': null,
+          'pageId': canvasPage.id,
+          'target': {'kind': 'page'},
+        },
+        'scale': 'fit',
+      },
+    ));
+    select(card.id);
+  }
+
+  void saveDiagramConnection(DiagramConnection edge) {
+    final nb = notebookId;
+    if (nb == null || notebookIsReadOnly(nb) || edge.from == edge.to ||
+        blockById(edge.from)?.isDiagramCard != true ||
+        blockById(edge.to)?.isDiagramCard != true) return;
+    pushUndo();
+    pageProps.diagramConnections = [
+      ...pageProps.diagramConnections.where((previous) => previous.id != edge.id),
+      edge,
+    ];
+    markDirty();
+  }
+
+  void removeDiagramConnection(String id) {
+    final nb = notebookId;
+    if (nb == null || notebookIsReadOnly(nb)) return;
+    final edges = pageProps.diagramConnections;
+    if (!edges.any((edge) => edge.id == id)) return;
+    pushUndo();
+    pageProps.diagramConnections = edges.where((edge) => edge.id != id).toList();
+    markDirty();
+  }
+
+  void _removeConnectionsTo(Set<String> ids) {
+    final edges = pageProps.diagramConnections;
+    if (edges.isEmpty) return;
+    pageProps.diagramConnections = edges.where(
+        (edge) => !ids.contains(edge.from) && !ids.contains(edge.to)).toList();
   }
 
   Future<void> addPage({String? sectionId}) async {
@@ -9452,11 +9529,15 @@ class AppState extends ChangeNotifier
     // reused them would answer for the original — two pages laying claim to
     // one review schedule. Blob references are copied AS THEY ARE: the bytes
     // are content-addressed, so a picture is shared rather than stored twice.
+    final ids = {for (final block in data.blocks) block.id: newId()};
     final copied = [
       for (final b in data.blocks)
-        Block.fromJson({...b.toJson(), 'id': newId()})
+        Block.fromJson({...b.toJson(), 'id': ids[b.id]})
     ];
-    importPage(nb, copy.id, copied, data.props);
+    final props = PageProps.fromJson(data.props.toJson())
+      ..diagramConnections = data.props.diagramConnections
+          .map((edge) => edge.remap(ids)).whereType<DiagramConnection>().toList();
+    importPage(nb, copy.id, copied, props);
 
     // **A locked page must not launder into an unlocked copy.** A passcode on
     // the section above is inherited for free, because a lock is resolved by
@@ -10637,6 +10718,7 @@ class AppState extends ChangeNotifier
     if (blockById(id)?.textLocked ?? false) return;
     if (recordUndo) pushUndo();
     blocks.removeWhere((b) => b.id == id);
+    _removeConnectionsTo({id});
     selectedIds.remove(id);
     if (selectedBlockId == id) selectedBlockId = selectedIds.firstOrNull;
     if (editingBlockId == id) editingBlockId = null;
@@ -10651,6 +10733,7 @@ class AppState extends ChangeNotifier
     if (selectedIds.isEmpty || selectionHasLockedText) return;
     pushUndo();
     blocks.removeWhere((b) => selectedIds.contains(b.id));
+    _removeConnectionsTo(selectedIds);
     selectedIds.clear();
     selectedBlockId = null;
     editingBlockId = null;
@@ -11449,6 +11532,20 @@ class AppState extends ChangeNotifier
   /// Persist everything before the process goes away (window close, logout).
   /// Awaited by the app's [AppLifecycleListener]; without it, up to one debounce
   /// interval of edits was silently lost on every close.
+  String get workspacePath => _repo.workspaceDir.path;
+  Future<void> Function(String path)? onChangeWorkspace;
+
+  Future<void> prepareWorkspaceCopy() async {
+    _rememberView();
+    _persistSession();
+    await flushSave();
+    if (_dirty) {
+      throw StateError('The current page could not be saved.');
+    }
+    await _repo.flushWorkspace();
+    _repo.checkpointWorkspace();
+  }
+
   Future<void> shutdown() async {
     _saveDebounce?.cancel();
     _gitDebounce?.cancel();

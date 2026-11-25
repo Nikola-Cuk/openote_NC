@@ -324,7 +324,8 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       // page link)"* — because the two are the same intention at different
       // sizes, and which one you want is often clear only once you can see
       // the window taking up a third of the page.
-      if (b.type == BlockType.embed && PortalRef.parse(b.content) != null)
+      if (b.type == BlockType.embed && !b.isDiagramCard &&
+          PortalRef.parse(b.content) != null)
         _item('to-link', Icons.link, 'Change to a page link'),
       const PopupMenuDivider(),
       // **Joining handwriting.** A stroke is its own block, so the lasso is

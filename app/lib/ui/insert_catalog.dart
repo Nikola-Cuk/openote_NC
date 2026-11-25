@@ -250,6 +250,7 @@ const List<String> kRibbonOrder = [
   'board',
   'pagelink',
   'portal',
+  'diagram-card',
 ];
 
 /// The ribbon's items, in [kRibbonOrder]. Anything the order forgets goes on
@@ -457,6 +458,13 @@ final List<InsertGroup> kInsertGroups = [
       opensPicker: true,
       size: const Size(240, 40),
       run: insertPageLink,
+    ),
+    InsertItem(
+      id: 'diagram-card',
+      icon: Icons.dashboard_customize_outlined,
+      label: (_) => 'Diagram card',
+      size: const Size(320, 200),
+      run: (context, app, at) async => app.addDiagramCard(at),
     ),
     InsertItem(
       id: 'portal',

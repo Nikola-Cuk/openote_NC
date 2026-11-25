@@ -29,6 +29,34 @@ Block _text(String s, {double x = 10, double y = 20}) =>
     Block(type: BlockType.text, x: x, y: y, content: {'text': s});
 
 void main() {
+  test('diagram connectors persist and undo restores the links of a removed card',
+      () {
+    Block card(double x) => Block(
+        type: BlockType.embed, x: x, y: 200, w: 320, h: 200,
+        content: {Block.diagramCardKey: true});
+    final a = card(100), b = card(500);
+    final app = _app()..blocks = [a, b];
+    final edge = DiagramConnection(
+      from: a.id,
+      to: b.id,
+      label: 'Depends on',
+      icon: '★',
+      route: DiagramRoute.wavy,
+      stroke: DiagramStroke.doubleLine,
+    );
+    app.saveDiagramConnection(edge);
+
+    final restored = PageProps.fromJson(app.pageProps.toJson())
+        .diagramConnections.single;
+    expect(restored.toJson(), edge.toJson());
+
+    app.removeBlock(a.id);
+    expect(app.pageProps.diagramConnections, isEmpty);
+    app.undo();
+    expect(app.blockById(a.id)?.isDiagramCard, isTrue);
+    expect(app.pageProps.diagramConnections.single.toJson(), edge.toJson());
+  });
+
   test('text block lock survives serialization and legacy blocks stay editable', () {
     final a = _text('protected');
     final b = _text('editable');

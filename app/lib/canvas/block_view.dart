@@ -1,6 +1,8 @@
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, kMiddleMouseButton;
 import 'package:flutter/material.dart';
+
+import 'diagram_links.dart';
 import 'package:flutter/services.dart';
 
 import '../core/pen_buttons.dart';
@@ -657,10 +659,10 @@ class _BlockViewState extends State<BlockView> {
     if (width) {
       // Manual resize locks the width (text boxes stop auto-growing).
       if (b.type == BlockType.text) b.content['autoWidth'] = false;
-      b.w = (b.w + d.delta.dx).clamp(80.0, 4000.0);
+      b.w = (b.w + d.delta.dx).clamp(b.isDiagramCard ? 160.0 : 80.0, 4000.0);
     }
     if (height && oldH != null) {
-      b.h = (oldH + d.delta.dy).clamp(40.0, 4000.0);
+      b.h = (oldH + d.delta.dy).clamp(b.isDiagramCard ? 88.0 : 40.0, 4000.0);
     }
 
     if (b.type == BlockType.ink) {
@@ -763,6 +765,9 @@ class _BlockViewState extends State<BlockView> {
           block: b,
           app: app,
           onMenu: (at) => showBlockMenu(context, app, b, at),
+          onConnect: b.isDiagramCard
+              ? () => showDiagramConnection(context, app, from: b.id)
+              : null,
           onUnlock: (pageId) => confirmWindowOnto(context, app, pageId)),
       BlockType.board => BoardBlockView(block: b, app: app),
       BlockType.graph => GraphBlockView(block: b, app: app),
@@ -836,7 +841,7 @@ class _BlockViewState extends State<BlockView> {
         onPanEnd: editing || _locked ? null : _bodyDragEnd,
         child: Container(
           width: displayW,
-          height: b.h,
+          height: b.h ?? (b.isDiagramCard ? 200 : null),
           constraints: const BoxConstraints(minHeight: 36),
           decoration: !_pendingEmpty
               ? BoxDecoration(

@@ -445,6 +445,7 @@ class PortalBlockView extends StatelessWidget {
       required this.block,
       required this.app,
       this.onMenu,
+      this.onConnect,
       this.onUnlock});
 
   final Block block;
@@ -471,6 +472,7 @@ class PortalBlockView extends StatelessWidget {
   /// this one for [PortalRef]. An import back the other way would close the
   /// loop for a single call.
   final void Function(Offset globalPosition)? onMenu;
+  final VoidCallback? onConnect;
 
   @override
   Widget build(BuildContext context) {
@@ -480,6 +482,7 @@ class PortalBlockView extends StatelessWidget {
           'This window was made by a newer version of Openote.');
     }
     final live = portalSourceLive(app, ref.pageId);
+    if (block.isDiagramCard) return _diagramCard(context, ref, live);
     // **Before anything of the source is read** (v1.0.2 bug 33). A window
     // onto a page with a passcode shows a lock until the passcode is given,
     // and asks again on every visit to this page.
@@ -570,6 +573,80 @@ class PortalBlockView extends StatelessWidget {
           child: live ? content : Opacity(opacity: .5, child: content),
         ),
       ],
+    );
+  }
+
+  Widget _diagramCard(BuildContext context, PortalRef ref, bool live) {
+    final colors = Theme.of(context).colorScheme;
+    final host = app.pageId;
+    final visible = live && host != ref.pageId && app.windowShows(ref.pageId);
+    final source = visible ? PortalSource.of(app, ref.pageId) : null;
+    final rect = source == null ? Rect.zero : portalExtentOf(app, source.blocks);
+    final title = portalTitle(app, ref.pageId);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ConstrainedBox(
+            constraints: const BoxConstraints.tightFor(height: 34),
+            child: ColoredBox(
+              color: colors.surfaceContainerHighest,
+              child: Row(children: [
+                Expanded(child: _Badge(
+                  title: title,
+                  live: live,
+                  onOpen: () => app.selectPage(ref.pageId),
+                )),
+                IconButton(
+                  tooltip: 'Connect to another card',
+                  icon: const Icon(Icons.add_link, size: 17),
+                  onPressed: onConnect,
+                ),
+              ]),
+            ),
+          ),
+          Expanded(
+            child: !live
+                ? const Center(child: Text('Canvas unavailable'))
+                : !visible
+                    ? Center(child: TextButton(
+                        onPressed: () => app.selectPage(ref.pageId),
+                        child: const Text('Open canvas'),
+                      ))
+                    : source == null || rect.width < 8 || rect.height < 8
+                        ? Center(child: TextButton.icon(
+                            onPressed: () => app.selectPage(ref.pageId),
+                            icon: const Icon(Icons.open_in_new, size: 14),
+                            label: const Text('Open canvas'),
+                          ))
+                        : ClipRect(
+                            child: SelectionArea(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onSecondaryTapUp: onMenu == null
+                                    ? null
+                                    : (d) => onMenu!(d.globalPosition),
+                                child: FittedBox(
+                                  fit: BoxFit.contain,
+                                  alignment: Alignment.topLeft,
+                                  child: PortalContent(
+                                    app: app,
+                                    source: source,
+                                    rect: rect,
+                                    chain: [if (host != null) host, ref.pageId],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+          ),
+        ],
+      ),
     );
   }
 

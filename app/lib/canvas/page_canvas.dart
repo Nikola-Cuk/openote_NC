@@ -21,6 +21,7 @@ import '../ui/protect_dialog.dart' show confirmWindowOnto;
 import 'block_view.dart';
 import 'align_guides.dart';
 import 'canvas_controller.dart';
+import 'diagram_links.dart';
 import 'ink_ops.dart';
 import 'ink_shapes.dart';
 import 'media_drop.dart';
@@ -1793,6 +1794,8 @@ class _PageCanvasState extends State<PageCanvas> {
                             ),
                           ),
                         ),
+                        if (app.pageProps.diagramConnections.isNotEmpty)
+                          Positioned.fill(child: DiagramLinks(app: app)),
                         // Painted in z order (review fix: z was stored but
                         // insertion order used to win) — except that the
                         // SELECTION outranks z. Hit-testing follows paint

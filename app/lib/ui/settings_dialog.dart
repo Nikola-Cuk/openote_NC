@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
@@ -97,6 +98,18 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     if (app.updateAvailable != null && mounted) {
       await showUpdateDialog(context, app);
     }
+  }
+
+  Future<void> _chooseWorkspace() async {
+    final move = app.onChangeWorkspace;
+    if (move == null) return;
+    final path = await getDirectoryPath(confirmButtonText: 'Use this folder');
+    if (path == null || !mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _MoveWorkspaceDialog(path: path, move: () => move(path)),
+    );
   }
 
   /// One setting: what it is, what it does if that is not obvious, and the
@@ -385,6 +398,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 hint: l.settingsTouchDrawingHint),
           ],
         _Group.connections => [
+            if (app.onChangeWorkspace != null)
+              _door(Icons.folder_outlined, 'Workspace location',
+                  app.workspacePath, _chooseWorkspace),
             _door(Icons.sync, l.settingsSync, l.settingsSyncHint,
                 () => showSyncDialog(context, app)),
             _door(
@@ -498,6 +514,75 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 /// A heading for a run of settings inside one group. Its own type, so
 /// [_SettingsDialogState._ruled] can tell it from a setting and not draw a
 /// line against it.
+class _MoveWorkspaceDialog extends StatefulWidget {
+  const _MoveWorkspaceDialog({required this.path, required this.move});
+
+  final String path;
+  final Future<void> Function() move;
+
+  @override
+  State<_MoveWorkspaceDialog> createState() => _MoveWorkspaceDialogState();
+}
+
+class _MoveWorkspaceDialogState extends State<_MoveWorkspaceDialog> {
+  bool _copying = false;
+  String? _error;
+
+  Future<void> _copy() async {
+    setState(() {
+      _copying = true;
+      _error = null;
+    });
+    try {
+      await widget.move();
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _copying = false;
+        _error = error.toString();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+        canPop: !_copying,
+        child: AlertDialog(
+          title: const Text('Copy workspace to a new folder?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText(widget.path),
+              const SizedBox(height: 12),
+              const Text('Openote will copy its local workspace to this folder '
+                  'and continue working there. The original copy stays in place.'),
+              if (_copying) ...[
+                const SizedBox(height: 16),
+                const LinearProgressIndicator(),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: TextStyle(
+                    color: Theme.of(context).colorScheme.error)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: _copying ? null : () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: _copying ? null : _copy,
+              child: const Text('Copy and switch'),
+            ),
+          ],
+        ),
+      );
+}
+
 class _Subhead extends StatelessWidget {
   const _Subhead(this.text);
 

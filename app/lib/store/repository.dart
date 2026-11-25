@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io show Directory;
 import 'dart:io' hide Directory, File, FileMode, FileStat,
     FileSystemEntity, FileSystemEntityType, FileSystemException,
     OSError, RandomAccessFile;
@@ -342,6 +343,16 @@ class Repository {
       }
     }
 
+    final location = await _workspaceLocationFileOrNull();
+    if (location != null && await location.exists()) {
+      final path = (await location.readAsString()).trim();
+      final selected = Directory(path);
+      if (path.isEmpty || !p.isAbsolute(path) || !_looksLikeWorkspace(selected)) {
+        throw StateError('The selected Openote workspace is unavailable: $path');
+      }
+      return selected;
+    }
+
     // Already living in app data: nothing to decide.
     final appData = await at(() async => (await getApplicationSupportDirectory()).path, create: false);
     if (appData != null && _looksLikeWorkspace(appData)) return appData;
@@ -359,6 +370,55 @@ class Repository {
           'Openote could not create a workspace folder in app data or Documents.');
     }
     return made;
+  }
+
+  static Future<File?> _workspaceLocationFileOrNull() async {
+    try {
+      final support = await getApplicationSupportDirectory();
+      return File(p.join(support.path, 'workspace-location.txt'));
+    } on Exception {
+      return null;
+    }
+  }
+
+  static Future<void> rememberWorkspaceLocation(Directory dir) async {
+    if (!_looksLikeWorkspace(dir)) {
+      throw StateError('The selected folder does not contain an Openote workspace.');
+    }
+    final location = await _workspaceLocationFileOrNull();
+    if (location == null) throw StateError('Openote cannot save its workspace preference.');
+    await location.parent.create(recursive: true);
+    final pending = File('${location.path}.tmp');
+    await pending.writeAsString(dir.absolute.path, flush: true);
+    await pending.rename(location.path);
+  }
+
+  static Future<Directory> workspaceCopyDestination(
+      Directory from, String destination) async {
+    final to = Directory(destination);
+    if (!await to.exists()) throw StateError('Choose an existing empty folder.');
+    final sourcePath = p.normalize(await io.Directory(from.path).resolveSymbolicLinks());
+    final targetPath = p.normalize(await io.Directory(to.path).resolveSymbolicLinks());
+    if (p.equals(sourcePath, targetPath) ||
+        p.isWithin(sourcePath, targetPath) ||
+        p.isWithin(targetPath, sourcePath)) {
+      throw StateError('Choose a folder outside the current workspace.');
+    }
+    if (await to.list(followLinks: false).isNotEmpty) {
+      throw StateError('Choose an empty folder so existing files are never overwritten.');
+    }
+    final problem = workspaceWriteProblem(to);
+    if (problem != null) throw StateError(problem);
+    return Directory(targetPath);
+  }
+
+  void checkpointWorkspace() {
+    for (final db in _open.values) {
+      final result = db.select('PRAGMA wal_checkpoint(FULL)').first;
+      if (result['busy'] != 0) {
+        throw StateError('A notebook is busy. Try changing the location again.');
+      }
+    }
   }
 
   /// Where a blocked workspace should move to, or null if there is nowhere
@@ -392,7 +452,7 @@ class Repository {
       throw StateError(
           'There is already a workspace at ${to.path} — nothing was copied.');
     }
-    await _copyDirectory(from, to);
+    await _copyDirectory(from, to, excludeWorkspaceRuntime: true);
     final problem = workspaceWriteProblem(to);
     if (problem != null) {
       throw StateError('The copy landed but cannot be written to: $problem');
@@ -1157,10 +1217,22 @@ class Repository {
   ///
   /// Throws on the first file that does not match, before any deletion, so a
   /// failed move leaves the original where it was.
-  static Future<void> _copyDirectory(Directory from, Directory to) async {
+  static Future<void> _copyDirectory(Directory from, Directory to,
+      {bool excludeWorkspaceRuntime = false}) async {
     to.createSync(recursive: true);
-    for (final entity in from.listSync(recursive: true)) {
+    for (final entity in from.listSync(
+        recursive: true, followLinks: !excludeWorkspaceRuntime)) {
       final rel = p.relative(entity.path, from: from.path);
+      if (excludeWorkspaceRuntime) {
+        if (const {'.instance-lock', '.open-request', '.open-request.tmp'}
+            .contains(rel)) {
+          continue;
+        }
+        if (FileSystemEntity.typeSync(entity.path, followLinks: false) ==
+            FileSystemEntityType.link) {
+          throw StateError('The workspace contains a symbolic link: $rel');
+        }
+      }
       final target = p.join(to.path, rel);
       if (entity is Directory) {
         Directory(target).createSync(recursive: true);

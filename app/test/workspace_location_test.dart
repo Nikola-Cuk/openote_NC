@@ -101,6 +101,23 @@ void main() {
     }, skip: !Platform.isWindows ? 'path separators are Windows-only here' : null);
   });
 
+  test('workspace destination must be empty and outside the existing workspace',
+      () async {
+    final source = Directory(p.join(tmp.path, 'source'))..createSync();
+    final nested = Directory(p.join(source.path, 'nested'))..createSync();
+    final target = Directory(p.join(tmp.path, 'target'))..createSync();
+    await expectLater(
+        Repository.workspaceCopyDestination(source, nested.path),
+        throwsStateError);
+    expect((await Repository.workspaceCopyDestination(source, target.path)).path,
+        await target.resolveSymbolicLinks());
+    final existing = File(p.join(target.path, 'keep.txt'))..writeAsStringSync('keep');
+    await expectLater(
+        Repository.workspaceCopyDestination(source, target.path),
+        throwsStateError);
+    expect(existing.readAsStringSync(), 'keep');
+  });
+
   group('copyWorkspaceTo', () {
     test('copies every file and leaves the original in place', () async {
       final from = Directory(p.join(tmp.path, 'from'))..createSync();
@@ -110,8 +127,11 @@ void main() {
       File(p.join(from.path, 'Physics.onotebook', 'ops', 'a.oplog'))
           .writeAsStringSync('{"seq":1}\n');
 
+      File(p.join(from.path, '.instance-lock')).writeAsStringSync('runtime');
       final to = Directory(p.join(tmp.path, 'to'));
       await Repository.copyWorkspaceTo(from, to);
+
+      expect(File(p.join(to.path, '.instance-lock')).existsSync(), isFalse);
 
       expect(File(p.join(to.path, 'workspace.json')).readAsStringSync(),
           '{"v":1}');
