@@ -5574,7 +5574,7 @@ class AppState extends ChangeNotifier
         b.content.remove('linearSource');
         b.updatedAt = nowMs();
         changed++;
-      } else if (b.type == BlockType.text) {
+      } else if (b.type == BlockType.text && !b.textLocked) {
         final text = b.content['text'] as String? ?? '';
         if (!text.contains('boxed')) continue;
         var out = text;
@@ -6107,7 +6107,7 @@ class AppState extends ChangeNotifier
   /// in the note, which is the thing those guards exist to prevent.
   void insertTextAtActiveCursor(String s, {bool recordUndo = true}) {
     final ae = activeEditor;
-    if (ae == null) return;
+    if (ae == null || ae.block.textLocked) return;
     final c = ae.controller;
     final sel = c.selection;
     final at = sel.isValid ? sel.start : c.text.length;
@@ -8510,6 +8510,7 @@ class AppState extends ChangeNotifier
 
     var changed = 0;
     for (final b in blocks) {
+      if (b.textLocked) continue;
       if (b.type == BlockType.table) {
         final rows = b.content['cells'];
         if (rows is! List) continue;
@@ -11037,11 +11038,13 @@ class AppState extends ChangeNotifier
   /// Returns the number of occurrences replaced.
   int replaceAll(String find, String replacement, {bool onlyCurrent = false}) {
     if (find.isEmpty) return 0;
-    final targets = onlyCurrent
+    final targets = (onlyCurrent
         ? (findMatches.isEmpty
             ? const <String>[]
             : [findMatches[findIndex.clamp(0, findMatches.length - 1)]])
-        : findMatches;
+        : findMatches)
+        .where((id) => blockById(id)?.textLocked == false)
+        .toList();
     if (targets.isEmpty) return 0;
     pushUndo();
     final needle = find.toLowerCase();
@@ -11069,7 +11072,7 @@ class AppState extends ChangeNotifier
 
     for (final id in targets) {
       final b = blocks.where((x) => x.id == id).firstOrNull;
-      if (b == null) continue;
+      if (b == null || b.textLocked) continue;
       if (b.type == BlockType.text) {
         count += _replaceInParagraph(b, swap);
         continue;

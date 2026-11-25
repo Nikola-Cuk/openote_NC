@@ -64,6 +64,8 @@ void main() {
     b.content['text'] = 'changed neighbour';
     app.setTextBlockLocked(a.id, locked: true);
 
+    app.setFindQuery('locked version');
+    expect(app.replaceAll('locked version', 'unwanted'), 0);
     a.content['text'] = 'bypassed an editor';
     app.markDirty();
     expect(app.blockById(a.id)?.content['text'], 'locked version');

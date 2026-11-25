@@ -93,7 +93,7 @@ InlineAtomHost blockAtomHost(
 /// gets it back.
 bool reconcileBlockAtoms(AppState app, String blockId, String text) {
   final b = app.blockById(blockId);
-  if (b == null) return false;
+  if (b == null || b.textLocked) return false;
   // The overwhelming majority of blocks have no atoms and never will. One
   // substring test keeps this off the per-keystroke path for all of them.
   if (!text.contains(InlineAtom.scheme) && !b.content.containsKey('atoms')) {

@@ -86,6 +86,34 @@ void main() {
       await t.pump();
     }
 
+    testWidgets('a locked text box displays selectable text and unlocks from its bar',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final b = app.addBlock(Block(
+        type: BlockType.text,
+        x: 150,
+        y: 200,
+        w: 280,
+        content: {'text': 'Protected text', 'autoWidth': false},
+      ));
+      app.setTextBlockLocked(b.id, locked: true);
+      await pump(t);
+
+      expect(find.byType(SelectionArea), findsOneWidget);
+      final lock = find.byTooltip('Text block locked. Click to unlock.');
+      expect(lock, findsOneWidget);
+      await t.tap(lock);
+      await t.pump();
+      expect(b.textLocked, isFalse);
+      expect(lock, findsNothing);
+      expect(find.byType(SelectionArea), findsNothing);
+
+      app.select(b.id, edit: true);
+      await t.pump();
+      expect(app.editingBlockId, b.id);
+      app.cancelPendingSave();
+    });
+
     testWidgets('A FINGER DRAG PANS; IT DOES NOT MARQUEE', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // A block that a marquee from the centre would certainly catch, so a

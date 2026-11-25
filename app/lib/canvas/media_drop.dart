@@ -123,7 +123,7 @@ Block? insertImageAtCaret(AppState app, Uint8List bytes, String mime) {
   final ae = app.activeEditor;
   if (ae == null) return null;
   final target = ae.block;
-  if (target.type != BlockType.text) return null;
+  if (target.type != BlockType.text || target.textLocked) return null;
   // `tryAddBlob` BEFORE the splice: a write that fails (full disk, read-only
   // folder) is already on the status bar, and splicing a reference to bytes
   // nothing holds would leave a broken picture that looks like it worked.
@@ -141,7 +141,7 @@ Block? insertImageIntoTextAt(
     AppState app, Uint8List bytes, String mime, Offset pagePt,
     {required bool dark}) {
   final target = _textBlockAt(app, pagePt);
-  if (target == null) return null;
+  if (target == null || target.textLocked) return null;
   // Same rule as [insertImageAtCaret]: no reference to bytes that were never
   // stored. The caller's fallback to [insertImageInNewBox] fails the same way
   // and the notice is already up.
