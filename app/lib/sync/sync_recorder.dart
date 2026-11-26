@@ -1066,7 +1066,8 @@ class SyncRecorder {
     if (blockId == null) return null;
 
     // The envelope, apart from what the op can carry itself.
-    const carried = {'content', 'x', 'y', 'w', 'h', 'rotation', 'updatedAt'};
+    const carried = {'content', 'x', 'y', 'w', 'h', 'rotation', 'updatedAt',
+      blockAttributionKey};
     Map<String, dynamic> envelope(Map<String, dynamic> b) => {
           for (final e in b.entries)
             if (!carried.contains(e.key)) e.key: e.value,
@@ -1107,6 +1108,9 @@ class SyncRecorder {
         'at': splice.at,
         'del': splice.del,
         'ins': splice.ins,
+        if (canonicalJson(before[blockAttributionKey]) !=
+            canonicalJson(after[blockAttributionKey]))
+          blockAttributionKey: after[blockAttributionKey],
         if (after['updatedAt'] != null) 'updatedAt': after['updatedAt'],
         if (_geometryMoved(before, after))
           'rect': {

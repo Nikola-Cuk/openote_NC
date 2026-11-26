@@ -198,6 +198,43 @@ double? aspectHeight(Block b) {
   return b.w * nh / nw;
 }
 
+const blockAttributionKey = 'openoteNC.attribution';
+
+class AuthorStamp {
+  const AuthorStamp(this.initials, this.at);
+
+  final String initials;
+  final int at;
+
+  Map<String, dynamic> toJson() => {'initials': initials, 'at': at};
+
+  static AuthorStamp? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final initials = value['initials'], at = value['at'];
+    if (initials is! String || initials.isEmpty || at is! int || at <= 0 ||
+        at > 8640000000000000) return null;
+    return AuthorStamp(initials, at);
+  }
+}
+
+class CanvasAttribution {
+  const CanvasAttribution({this.created, this.edited});
+
+  final AuthorStamp? created;
+  final AuthorStamp? edited;
+  AuthorStamp? get latest => edited ?? created;
+
+  Map<String, dynamic> toJson() => {
+        if (created != null) 'created': created!.toJson(),
+        if (edited != null) 'edited': edited!.toJson(),
+      };
+
+  static CanvasAttribution fromJson(Object? value) => value is Map
+      ? CanvasAttribution(created: AuthorStamp.fromJson(value['created']),
+          edited: AuthorStamp.fromJson(value['edited']))
+      : const CanvasAttribution();
+}
+
 enum DiagramRoute { straight, curved, wavy, elbow }
 
 enum DiagramStroke { solid, dashed, dotted, doubleLine }
@@ -219,6 +256,7 @@ class DiagramConnection {
     this.stroke = DiagramStroke.solid,
     this.flow = DiagramFlow.none,
     this.flowWidth = 3,
+    this.attribution = const CanvasAttribution(),
   }) : id = id ?? newId();
 
   final String id;
@@ -232,6 +270,13 @@ class DiagramConnection {
   final DiagramStroke stroke;
   final DiagramFlow flow;
   final int flowWidth;
+  final CanvasAttribution attribution;
+
+  DiagramConnection withAttribution(CanvasAttribution author) => DiagramConnection(
+        id: id, from: from, to: to, fromSide: fromSide, toSide: toSide,
+        label: label, icon: icon, route: route, stroke: stroke,
+        flow: flow, flowWidth: flowWidth, attribution: author,
+      );
 
   DiagramConnection? remap(Map<String, String> ids) {
     final start = ids[from], end = ids[to];
@@ -254,6 +299,7 @@ class DiagramConnection {
         'stroke': stroke.name,
         if (flow != DiagramFlow.none) 'flow': flow.name,
         if (flowWidth != 3) 'flowWidth': flowWidth,
+        if (attribution.latest != null) blockAttributionKey: attribution.toJson(),
       };
 
   static DiagramConnection? fromJson(Object? data) {
@@ -278,6 +324,7 @@ class DiagramConnection {
       flow: DiagramFlow.values.where((v) => v.name == data['flow'])
               .firstOrNull ?? DiagramFlow.none,
       flowWidth: data['flowWidth'] == 2 ? 2 : 3,
+      attribution: CanvasAttribution.fromJson(data[blockAttributionKey]),
     );
   }
 }
@@ -540,6 +587,21 @@ class Block {
         : content[diagramCanvasKey];
     return id is String && id.isNotEmpty ? id : null;
   }
+
+  static const outlineKey = 'openoteNC.outline';
+
+  bool get outlinePinned => content[outlineKey] is bool
+      ? content[outlineKey] as bool : isDiagramCard;
+
+  bool get canAnchor {
+    if (type != BlockType.text || isDiagramCard) return true;
+    final text = content['text'], atoms = content['atoms'];
+    return (text is String && text.trim().isNotEmpty) ||
+        (atoms is Map && atoms.isNotEmpty);
+  }
+
+  CanvasAttribution get attribution =>
+      CanvasAttribution.fromJson(unknownFields[blockAttributionKey]);
 
   static const textLockKey = 'openoteNC.readOnly';
 

@@ -22,6 +22,7 @@ import 'block_view.dart';
 import 'align_guides.dart';
 import 'canvas_controller.dart';
 import 'diagram_links.dart';
+import 'object_chrome.dart';
 import 'ink_ops.dart';
 import 'ink_shapes.dart';
 import 'media_drop.dart';
@@ -1710,6 +1711,7 @@ class _PageCanvasState extends State<PageCanvas> {
               Offset(controller.viewport.width, controller.viewport.height)),
         ).inflate(200);
         final inkBlocks = app.blocks.where((b) => b.type == BlockType.ink);
+        final connected = app.connectedBlockIds;
         final visibleStrokes = [
           for (final b in inkBlocks)
             // Never cull the selected/editing block (CANVAS-9), so a selected
@@ -1827,7 +1829,15 @@ class _PageCanvasState extends State<PageCanvas> {
                             block: b,
                             app: app,
                             controller: controller,
+                            connected: connected.contains(b.id),
                           ),
+                        for (final b in inkBlocks)
+                          if ((b.outlinePinned || connected.contains(b.id) ||
+                              app.selectedIds.contains(b.id) ||
+                              (app.showAuthorBadges && b.attribution.latest != null)) &&
+                              visible.overlaps(canvasObjectFrame(app, b)))
+                            InkObjectFrame(app: app, block: b,
+                                connected: connected.contains(b.id)),
                         if (!app.inkToolInHand)
                           Positioned.fill(child: DiagramAnchors(
                             key: ValueKey(app.pageId),

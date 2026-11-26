@@ -217,6 +217,38 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('empty caret has no anchors and connected outlines stay visible',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final note = app.addBlock(Block(
+        type: BlockType.text, x: 80, y: 160, w: 240,
+        content: {'text': '', 'autoWidth': false},
+      ));
+      app.pendingEmptyBlockId = note.id;
+      app.select(note.id, edit: true);
+      await pump(t, listen: true);
+      final anchor = find.byKey(ValueKey('connector-anchor-${note.id}-right'));
+      expect(anchor, findsNothing);
+
+      note.content['text'] = 'Now a note';
+      app.pendingEmptyBlockId = null;
+      app.updateBlock(note);
+      await t.pump();
+      expect(anchor, findsOneWidget);
+      final another = app.addBlock(Block(
+        type: BlockType.text, x: 400, y: 230, w: 200,
+        content: {'text': 'Other note', 'autoWidth': false},
+      ));
+      app.saveDiagramConnection(DiagramConnection(from: note.id, to: another.id));
+      app.select(null);
+      await t.pump();
+      for (final block in [note, another]) {
+        expect(find.byKey(ValueKey('canvas-outline-${block.id}')), findsOneWidget);
+      }
+      expect(find.byTooltip('Edit connector'), findsOneWidget);
+      app.cancelPendingSave();
+    });
+
     testWidgets('A FINGER DRAG PANS; IT DOES NOT MARQUEE', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // A block that a marquee from the centre would certainly catch, so a

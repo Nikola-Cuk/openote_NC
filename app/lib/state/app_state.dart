@@ -178,6 +178,17 @@ enum OpenNotebookOutcome {
 /// it and contains no path, no exception and no jargon; [details] is the path
 /// and the raw error, which the UI puts behind an Advanced fold. A stack trace
 /// on screen is the failure mode this type exists to prevent.
+typedef NotebookSearchHit = ({
+  String notebookId,
+  String notebookTitle,
+  String nodeId,
+  String title,
+  NodeKind kind,
+  int level,
+  String subtitle,
+  bool content,
+});
+
 class OpenNotebookResult {
   const OpenNotebookResult(this.outcome, this.message, {this.details});
 
@@ -390,6 +401,43 @@ class AppState extends ChangeNotifier
     final hits = _repo.searchPageContent(notebookId!, query);
     if (!_anyProtection) return hits;
     return [for (final h in hits) if (!isLocked(h.pageId)) h];
+  }
+
+  List<NotebookSearchHit> searchNotebook(NotebookRef notebook, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    final active = notebook.id == notebookId;
+    final tree = active ? nodes : _repo.loadNodes(notebook.id);
+    final byId = {for (final node in tree) node.id: node};
+    final protected = active ? const <String>{} : protectedNodeIdsOf(notebook.id);
+    final gate = ProtectionTree(tree, protected.contains);
+    bool hidden(String id) =>
+        active ? isLocked(id) : protected.isNotEmpty && gate.governing(id) != null;
+    NotebookSearchHit hit(TreeNode node, String subtitle, {bool content = false}) => (
+      notebookId: notebook.id,
+      notebookTitle: notebook.title,
+      nodeId: node.id,
+      title: node.title,
+      kind: node.kind,
+      level: node.level,
+      subtitle: subtitle,
+      content: content,
+    );
+
+    final titles = tree.where((node) =>
+        (node.kind == NodeKind.page || node.kind == NodeKind.section) &&
+        node.title.toLowerCase().contains(q) && !hidden(node.id)).toList();
+    final titleIds = titles.map((node) => node.id).toSet();
+    final matches = q.length < 3
+        ? const <({String pageId, String snippet})>[]
+        : _repo.searchPageContent(notebook.id, q);
+    return [
+      for (final node in titles) hit(node, byId[node.parentId]?.title ?? ''),
+      for (final match in matches)
+        if (!titleIds.contains(match.pageId) && !hidden(match.pageId))
+          if (byId[match.pageId] case final node?)
+            hit(node, match.snippet, content: true),
+    ];
   }
 
   /// Re-read the tree from storage into [nodes], bumping [nodesRevision].
@@ -4682,6 +4730,7 @@ class AppState extends ChangeNotifier
   // Page content
   List<Block> _blocks = [];
   final _protectedTextBlocks = <String, String>{};
+  Map<String, String> _authorBaseline = {};
 
   @override
   List<Block> get blocks => _blocks;
@@ -4692,6 +4741,83 @@ class AppState extends ChangeNotifier
       ..clear()
       ..addEntries(value.where((b) => b.textLocked).map(
           (b) => MapEntry(b.id, jsonEncode(b.toJson()))));
+    _resetAuthorBaseline();
+  }
+
+  String authorFullName = '';
+  bool showAuthorBadges = true;
+
+  String get authorInitials => authorFullName.trim().split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .take(2)
+      .map((part) => part.characters.first.toUpperCase())
+      .join();
+
+  void setAuthorProfile(String name, {required bool showBadges}) {
+    final wasUnnamed = authorFullName.isEmpty;
+    authorFullName = name.trim();
+    showAuthorBadges = showBadges;
+    _repo.setSetting('canvasAuthorName', authorFullName);
+    _repo.setSetting('canvasAuthorBadges', showBadges);
+    if (wasUnnamed || authorFullName.isEmpty) _resetAuthorBaseline();
+    notifyListeners();
+  }
+
+  String _blockAuthorFingerprint(Block b) {
+    final data = b.toJson()
+      ..remove(blockAttributionKey)
+      ..remove('updatedAt');
+    if (b.type == BlockType.text && b.content['autoWidth'] != false) {
+      data.remove('w');
+    }
+    return canonicalJson(data);
+  }
+
+  void _resetAuthorBaseline() {
+    _authorBaseline = authorFullName.isEmpty ? {} : {
+      for (final b in blocks)
+        if (b.canAnchor || b.attribution.latest != null) b.id: _blockAuthorFingerprint(b),
+    };
+  }
+
+  AuthorStamp? _currentAuthorStamp() {
+    final initials = authorInitials;
+    return initials.isEmpty ? null : AuthorStamp(initials, nowMs());
+  }
+
+  void _stampChangedBlocks() {
+    final stamp = _currentAuthorStamp();
+    if (stamp == null) return;
+    final before = _authorBaseline;
+    final after = <String, String>{};
+    for (final b in blocks) {
+      if (!b.canAnchor && b.attribution.latest == null) continue;
+      final fingerprint = _blockAuthorFingerprint(b);
+      after[b.id] = fingerprint;
+      final previous = before[b.id];
+      if (previous == fingerprint) continue;
+      final attribution = b.attribution;
+      if (previous == null && attribution.latest != null) continue;
+      final next = previous == null
+          ? CanvasAttribution(created: stamp)
+          : CanvasAttribution(created: attribution.created, edited: stamp);
+      b.unknownFields[blockAttributionKey] = next.toJson();
+      if (b.textLocked) _protectedTextBlocks[b.id] = jsonEncode(b.toJson());
+    }
+    _authorBaseline = after;
+  }
+
+  Set<String> get connectedBlockIds => {
+    for (final edge in pageProps.diagramConnections) ...[edge.from, edge.to],
+  };
+
+  void toggleBlockOutline(Block b) {
+    final nb = notebookId;
+    if (!identical(blockById(b.id), b) || b.textLocked ||
+        (nb != null && notebookIsReadOnly(nb))) return;
+    pushUndo();
+    b.content[Block.outlineKey] = !b.outlinePinned;
+    updateBlock(b);
   }
 
   void setTextBlockLocked(String id, {required bool locked}) {
@@ -7525,6 +7651,7 @@ class AppState extends ChangeNotifier
       // they would join the group they were copied from, and the next drag of
       // the original would walk the copies across the page with it. Copy part
       // of a group and the paste is a group of just that part.
+      fresh.unknownFields.remove(blockAttributionKey);
       if (fresh.textLocked) fresh.content.remove(Block.textLockKey);
       final g = fresh.groupId;
       if (g != null) fresh.groupId = oldToNewGroup.putIfAbsent(g, newId);
@@ -7696,6 +7823,8 @@ class AppState extends ChangeNotifier
     if (fav is List) _favourites.addAll(fav.cast<String>());
     final rec = _repo.getSetting('recentPages');
     if (rec is List) _recents.addAll(rec.cast<String>());
+    authorFullName = _repo.getSetting('canvasAuthorName') as String? ?? '';
+    showAuthorBadges = _repo.getSetting('canvasAuthorBadges') != false;
     penSeenHere = _repo.getSetting('penSeenHere') == true;
     final pb = _repo.getSetting('penButton') as String?;
     if (pb != null) {
@@ -9349,11 +9478,20 @@ class AppState extends ChangeNotifier
   void saveDiagramConnection(DiagramConnection edge) {
     final nb = notebookId;
     if (nb == null || notebookIsReadOnly(nb) || edge.from == edge.to ||
-        blockById(edge.from) == null || blockById(edge.to) == null) return;
+        blockById(edge.from)?.canAnchor != true ||
+        blockById(edge.to)?.canAnchor != true) return;
+    final edges = pageProps.diagramConnections;
+    final old = edges.where((previous) => previous.id == edge.id).firstOrNull;
+    final stamp = _currentAuthorStamp();
+    final attribution = stamp == null
+        ? old?.attribution ?? edge.attribution
+        : old == null
+            ? CanvasAttribution(created: stamp)
+            : CanvasAttribution(created: old.attribution.created, edited: stamp);
     pushUndo();
     pageProps.diagramConnections = [
-      ...pageProps.diagramConnections.where((previous) => previous.id != edge.id),
-      edge,
+      ...edges.where((previous) => previous.id != edge.id),
+      edge.withAttribution(attribution),
     ];
     markDirty();
   }
@@ -9534,11 +9672,21 @@ class AppState extends ChangeNotifier
     final ids = {for (final block in data.blocks) block.id: newId()};
     final copied = [
       for (final b in data.blocks)
-        Block.fromJson({...b.toJson(), 'id': ids[b.id]})
+        Block.fromJson({...b.toJson(), 'id': ids[b.id]}
+          ..remove(blockAttributionKey))
     ];
     final props = PageProps.fromJson(data.props.toJson())
       ..diagramConnections = data.props.diagramConnections
           .map((edge) => edge.remap(ids)).whereType<DiagramConnection>().toList();
+    final stamp = _currentAuthorStamp();
+    if (stamp != null) {
+      for (final block in copied) {
+        block.unknownFields[blockAttributionKey] =
+            CanvasAttribution(created: stamp).toJson();
+      }
+      props.diagramConnections = props.diagramConnections.map((edge) =>
+          edge.withAttribution(CanvasAttribution(created: stamp))).toList();
+    }
     importPage(nb, copy.id, copied, props);
 
     // **A locked page must not launder into an unlocked copy.** A passcode on
@@ -10073,7 +10221,14 @@ class AppState extends ChangeNotifier
     _preserveLockedTextBlocks(restored);
     final wasEditing = editingBlockId;
     _carryCardSchedules(blocks, restored);
+    final authorBaseline = _authorBaseline;
+    final currentAuthors = {for (final b in blocks) b.id: b.unknownFields[blockAttributionKey]};
+    for (final b in restored) {
+      final author = currentAuthors[b.id];
+      if (author != null) b.unknownFields[blockAttributionKey] = author;
+    }
     blocks = restored;
+    _authorBaseline = authorBaseline;
     selectedIds.clear();
     selectedBlockId = null;
     // **Undo while you are writing keeps the caret in the box.** Ctrl+Z
@@ -11466,6 +11621,7 @@ class AppState extends ChangeNotifier
       // the log holding refs it cannot resolve. That is invisible locally and
       // total on another device.
       _preserveLockedTextBlocks(blocks);
+      _stampChangedBlocks();
       final toSave = InkStorage.persistAll(
           blocks, (bytes) => importBlob(nb, bytes, inkMimeType));
       // The engine owns persistence: version snapshot (throttled, SYNC-8) + the

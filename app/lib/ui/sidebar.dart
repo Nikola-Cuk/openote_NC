@@ -155,6 +155,7 @@ class _SidebarState extends State<Sidebar> {
 
   void _clearSearch() {
     _searchCtl.clear();
+    _searchKey = null;
     setState(() => _query = '');
   }
 
@@ -261,113 +262,114 @@ class _SidebarState extends State<Sidebar> {
     );
   }
 
+  (String, String?, int, int)? _searchKey;
+  List<NotebookSearchHit> _currentMatches = const [];
+  Future<List<NotebookSearchHit>>? _otherMatches;
+
+  void _prepareSearch(String q) {
+    final key = (q, app.notebookId, app.gateRevision, app.nodesRevision);
+    if (_searchKey == key) return;
+    _searchKey = key;
+    final active = app.notebooks.where((nb) => nb.id == app.notebookId).firstOrNull;
+    _currentMatches = active == null ? const [] : app.searchNotebook(active, q);
+    _otherMatches = _scanOtherNotebooks(q, key);
+  }
+
+  Future<List<NotebookSearchHit>> _scanOtherNotebooks(
+      String q, (String, String?, int, int) key) async {
+    final others = app.notebooks.where((nb) => nb.id != key.$2).toList();
+    final matches = <NotebookSearchHit>[];
+    for (final notebook in others) {
+      await Future<void>.delayed(Duration.zero);
+      if (!mounted || _searchKey != key || _query.trim().toLowerCase() != q) {
+        return const [];
+      }
+      try {
+        matches.addAll(app.searchNotebook(notebook, q));
+      } catch (error) {
+        debugPrint('[openote/search] notebook unavailable: ${notebook.id}: $error');
+      }
+    }
+    return matches;
+  }
+
+  Future<void> _openMatch(NotebookSearchHit hit) async {
+    _clearSearch();
+    if (app.notebookId != hit.notebookId) {
+      await app.selectNotebook(hit.notebookId);
+    }
+    if (!mounted) return;
+    if (hit.kind == NodeKind.page) {
+      await app.selectPage(hit.nodeId);
+    } else {
+      await app.activateSection(hit.nodeId);
+    }
+  }
+
   Widget _searchResults(BuildContext context) {
     final l = L.of(context);
     final q = _query.trim().toLowerCase();
-    final results = app.nodes
-        .where((n) =>
-            (n.kind == NodeKind.page || n.kind == NodeKind.section) &&
-            n.title.toLowerCase().contains(q) &&
-            // Titles are excluded for the same reason content is (see
-            // AppState.searchContent). A page called "Therapy" leaks the thing
-            // that made it worth locking, and half a search box that honours
-            // the passcode while the other half does not is not a gate. The
-            // tree still shows it, so a locked page is never unreachable —
-            // search is where you would stumble ON it.
-            !app.isLocked(n.id))
-        .toList();
-    // Notebook-wide content search (TEXT-7). Titles match first because a
-    // title hit is almost always what you meant; content hits follow, minus
-    // any page already listed above.
-    final titleHits = {for (final n in results) n.id};
-    final contentHits = [
-      for (final h in _contentHitsFor(q))
-        if (!titleHits.contains(h.pageId)) h
-    ];
-    if (results.isEmpty && contentHits.isEmpty) {
-      return Center(
-        child: Text(l.navNoMatches(_query.trim()),
-            style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
-      );
-    }
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      children: [
-        for (final n in results)
-          ListTile(
-            dense: true,
-            visualDensity: VisualDensity.compact,
-            leading: Icon(
-                n.kind == NodeKind.section
-                    ? Icons.folder_outlined
-                    : n.level == 0
-                        ? Icons.description_outlined
-                        : Icons.subdirectory_arrow_right,
-                size: 16),
-            title: Text(n.title,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13)),
-            subtitle: n.kind == NodeKind.page
-                ? Text(app.node(n.parentId)?.title ?? '',
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11))
-                : null,
-            onTap: () {
-              if (n.kind == NodeKind.page) {
-                app.selectPage(n.id);
-              } else {
-                app.activateSection(n.id);
-              }
-              _clearSearch();
-            },
-          ),
-        if (contentHits.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-            child: Text(l.navInPageContent,
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: context.surfaces.textSecondary)),
-          ),
-          for (final h in contentHits)
-            ListTile(
-              dense: true,
-              visualDensity: VisualDensity.compact,
-              leading: const Icon(Icons.search, size: 16),
-              title: Text(app.node(h.pageId)?.title ?? l.navUntitled,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13)),
-              subtitle: h.snippet.isEmpty
-                  ? null
-                  : Text(h.snippet,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11)),
-              onTap: () {
-                app.selectPage(h.pageId);
-                _clearSearch();
-              },
-            ),
-        ],
-      ],
+    _prepareSearch(q);
+    return FutureBuilder<List<NotebookSearchHit>>(
+      key: ValueKey(_searchKey),
+      future: _otherMatches,
+      builder: (context, snapshot) {
+        final current = _currentMatches;
+        final others = snapshot.data ?? const <NotebookSearchHit>[];
+        final loading = snapshot.connectionState != ConnectionState.done;
+        if (current.isEmpty && others.isEmpty && !loading) {
+          return Center(
+            child: Text(l.navNoMatches(_query.trim()),
+              style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          children: [
+            for (final h in current.where((h) => !h.content)) _matchTile(h),
+            if (current.any((h) => h.content)) ...[
+              _searchHeading(l.navInPageContent),
+              for (final h in current.where((h) => h.content)) _matchTile(h),
+            ],
+            for (final notebookId in others.map((h) => h.notebookId).toSet()) ...[
+              _searchHeading(others.firstWhere((h) => h.notebookId == notebookId).notebookTitle),
+              for (final hit in others.where((h) => h.notebookId == notebookId))
+                _matchTile(hit),
+            ],
+            if (loading)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: LinearProgressIndicator(),
+              ),
+          ],
+        );
+      },
     );
   }
 
-  /// Content hits, cached per query so the SQLite scan doesn't re-run on every
-  /// rebuild while the results are on screen.
-  String? _contentQuery;
-  List<({String pageId, String snippet})> _contentCache = const [];
+  Widget _searchHeading(String label) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+    child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+        color: context.surfaces.textSecondary)),
+  );
 
-  List<({String pageId, String snippet})> _contentHitsFor(String q) {
-    // Below 3 characters the result set is everything, which is neither useful
-    // nor cheap.
-    if (q.length < 3) return const [];
-    if (_contentQuery == q) return _contentCache;
-    _contentQuery = q;
-    _contentCache = app.searchContent(q);
-    return _contentCache;
-  }
+  Widget _matchTile(NotebookSearchHit hit) => ListTile(
+    dense: true,
+    visualDensity: VisualDensity.compact,
+    leading: Icon(hit.content
+        ? Icons.search
+        : hit.kind == NodeKind.section
+            ? Icons.folder_outlined
+            : hit.level == 0
+                ? Icons.description_outlined
+                : Icons.subdirectory_arrow_right, size: 16),
+    title: Text(hit.title, overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 13)),
+    subtitle: hit.subtitle.isEmpty ? null : Text(hit.subtitle,
+        maxLines: 2, overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 11)),
+    onTap: () => _openMatch(hit),
+  );
 
   // ── Two columns: sections | pages (the OneNote shape) ──────────────────
   //

@@ -24,6 +24,7 @@ import '../ui/context_menus.dart';
 import '../ui/protect_dialog.dart' show confirmWindowOnto;
 import 'canvas_controller.dart';
 import 'portal_view.dart';
+import 'object_chrome.dart';
 
 /// Selection chrome + move/resize for one block; dispatches content by type.
 /// Interaction (F-4 fix): single tap on text/code/math enters editing
@@ -35,10 +36,12 @@ class BlockView extends StatefulWidget {
     required this.block,
     required this.app,
     required this.controller,
+    this.connected = false,
   });
   final Block block;
   final AppState app;
   final CanvasController controller;
+  final bool connected;
 
   @override
   State<BlockView> createState() => _BlockViewState();
@@ -78,7 +81,7 @@ const double _kChromePad = 8;
 /// a drag moves the container. OneNote's model, and the reason for it is that
 /// a click-drag inside a text box means "select this text" to everyone who has
 /// ever used a text box.
-const double _kBarH = 16;
+const double _kBarH = canvasObjectHeaderHeight;
 
 class _BlockViewState extends State<BlockView> {
   bool _hoverBody = false;
@@ -539,9 +542,9 @@ class _BlockViewState extends State<BlockView> {
         },
         // Moving is allowed WHILE editing — OneNote lets you drag a container
         // by its bar with the caret still in it.
-        onPanStart: _dragStart,
-        onPanUpdate: _drag,
-        onPanEnd: _dragEnd,
+        onPanStart: _locked ? null : _dragStart,
+        onPanUpdate: _locked ? null : _drag,
+        onPanEnd: _locked ? null : _dragEnd,
         onTap: () =>
             app.select(b.id, additive: HardwareKeyboard.instance.isShiftPressed),
         // Block actions stay reachable while editing, which they were not
@@ -564,18 +567,48 @@ class _BlockViewState extends State<BlockView> {
                     color: live
                         ? Theme.of(context).colorScheme.onPrimary
                         : OnoteColors.graphite400),
-                const Spacer(),
-                if (b.type == BlockType.text)
-                  _barButton(context, Icons.lock_open_outlined,
-                      'Text block unlocked. Click to lock.',
-                      () => app.setTextBlockLocked(b.id, locked: true), live),
-                if (primary) ...[
-                  _barButton(context, Icons.copy_all_outlined,
-                      'Duplicate (Ctrl+D)', () => app.duplicateBlock(b.id), live),
-                  _barButton(context, Icons.close, 'Delete (Del)',
-                      () => app.removeSelected(), live),
-                  const SizedBox(width: 2),
-                ],
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (app.showAuthorBadges && b.attribution.latest != null)
+                            CanvasAuthorBadge(attribution: b.attribution),
+                          if (b.type == BlockType.text && b.isDiagramCard)
+                            _barButton(context,
+                                b.diagramCanvasPageId == null ? Icons.add : Icons.open_in_new,
+                                b.diagramCanvasPageId == null ? 'Add canvas' : 'Open canvas',
+                                () {
+                                  final target = b.diagramCanvasPageId;
+                                  if (target == null) {
+                                    app.attachDiagramCanvas(b.id);
+                                  } else {
+                                    app.selectPage(target);
+                                  }
+                                }, live),
+                          _barButton(context,
+                              b.outlinePinned ? Icons.visibility : Icons.visibility_outlined,
+                              b.outlinePinned ? 'Unpin outline' : 'Pin outline',
+                              () => app.toggleBlockOutline(b), live),
+                          if (b.type == BlockType.text)
+                            _barButton(context, Icons.lock_open_outlined,
+                                'Text block unlocked. Click to lock.',
+                                () => app.setTextBlockLocked(b.id, locked: true), live),
+                          if (primary) ...[
+                            _barButton(context, Icons.copy_all_outlined,
+                                'Duplicate (Ctrl+D)', () => app.duplicateBlock(b.id), live),
+                            _barButton(context, Icons.close, 'Delete (Del)',
+                                () => app.removeSelected(), live),
+                          ],
+                          const SizedBox(width: 3),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -601,32 +634,6 @@ class _BlockViewState extends State<BlockView> {
           ),
         ),
       );
-
-  Widget _inlineDiagramCard(BuildContext context) {
-    final canvasPage = b.diagramCanvasPageId;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Align(
-          alignment: Alignment.centerRight,
-          child: IconButton(
-            tooltip: canvasPage == null ? 'Add canvas' : 'Open canvas',
-            visualDensity: VisualDensity.compact,
-            iconSize: 15,
-            constraints: const BoxConstraints.tightFor(width: 30, height: 26),
-            padding: EdgeInsets.zero,
-            icon: Icon(canvasPage == null ? Icons.add : Icons.open_in_new),
-            onPressed: canvasPage != null
-                ? () => app.selectPage(canvasPage)
-                : b.textLocked
-                    ? null
-                    : () => app.attachDiagramCanvas(b.id),
-          ),
-        ),
-        Expanded(child: TextBlockView(block: b, app: app)),
-      ],
-    );
-  }
 
   String _a11yLabel() {
     final t = switch (b.type) {
@@ -773,7 +780,6 @@ class _BlockViewState extends State<BlockView> {
     }
 
     final content = switch (b.type) {
-      BlockType.text when b.isDiagramCard => _inlineDiagramCard(context),
       BlockType.text => TextBlockView(block: b, app: app),
       BlockType.math => MathBlockView(block: b, app: app),
       BlockType.image => ImageBlockView(block: b, app: app),
@@ -818,9 +824,14 @@ class _BlockViewState extends State<BlockView> {
     // Suppressed entirely while _pendingEmpty — the box does not exist yet,
     // as far as the eye can tell, until the first character lands in it.
     final showChrome = !inkToolActive &&
-        !_locked &&
+        !b.textLocked &&
         !_pendingEmpty &&
         (_hover || selected || editing);
+    final showFrame = !_pendingEmpty &&
+        (showChrome || widget.connected || b.outlinePinned || b.textLocked);
+    final borderColor = editing ? primaryColor.withValues(alpha: .65)
+        : selected ? primaryColor : Theme.of(context).colorScheme.outline;
+    final showAuthor = app.showAuthorBadges && b.attribution.latest != null;
 
     const devices = {
       // Trackpad two-finger scrolls arrive as PointerPanZoom events, which
@@ -886,21 +897,7 @@ class _BlockViewState extends State<BlockView> {
                       (editing || selected
                           ? (dark ? OnoteColors.night50 : OnoteColors.paper0)
                           : Colors.transparent),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    width: primary && !editing ? 2 : 1,
-                    color: editing
-                        ? primaryColor.withValues(alpha: .55)
-                        : selected
-                            ? primaryColor
-                            : _hover
-                                ? (dark
-                                    ? OnoteColors.night300
-                                    : OnoteColors.paper300)
-                                : (b.isDiagramCard
-                                    ? Theme.of(context).colorScheme.outlineVariant
-                                    : Colors.transparent),
-                  ),
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
                 )
               // OneNote-style: no visible box at all until the first
               // keystroke — not even the faint hover/selection tint.
@@ -978,7 +975,7 @@ class _BlockViewState extends State<BlockView> {
               // block. Suppressed entirely for the ink tools and for locked
               // blocks, matching `showChrome`, so hovering never competes with
               // the pen.
-              if (!inkToolActive && !_locked)
+              if (!inkToolActive && !b.textLocked)
                 Positioned(
                   left: 0,
                   right: 0,
@@ -991,6 +988,28 @@ class _BlockViewState extends State<BlockView> {
                           onExit: (_) => _setHover(chrome: false),
                           child: const SizedBox.expand(),
                         ),
+                ),
+              if (showFrame)
+                Positioned(
+                  left: _kChromePad,
+                  right: _kChromePad,
+                  top: 0,
+                  bottom: _kChromePad,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      key: ValueKey('canvas-outline-${b.id}'),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: borderColor),
+                      ),
+                    ),
+                  ),
+                ),
+              if (showAuthor && !showChrome)
+                Positioned(
+                  right: _kChromePad + (b.textLocked ? 28 : 3),
+                  top: 0,
+                  child: CanvasAuthorBadge(attribution: b.attribution),
                 ),
               if (b.textLocked)
                 Positioned(

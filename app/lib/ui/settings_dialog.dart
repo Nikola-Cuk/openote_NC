@@ -12,6 +12,7 @@ import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import '../update/app_update.dart';
 import 'mcp_dialog.dart';
+import 'author_profile_dialog.dart';
 import 'onboarding.dart';
 import 'onote_dialog.dart';
 import 'pen_test_dialog.dart';
@@ -398,6 +399,11 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 hint: l.settingsTouchDrawingHint),
           ],
         _Group.connections => [
+            _door(Icons.badge_outlined, authorProfileTitle,
+                app.authorFullName, () async {
+                  await showAuthorProfile(context, app);
+                  if (mounted) setState(() {});
+                }),
             if (app.onChangeWorkspace != null)
               _door(Icons.folder_outlined, L.of(context).settingsWorkspaceLocation,
                   app.workspacePath, _chooseWorkspace),

@@ -8,7 +8,7 @@
 /// observe.
 library;
 
-import '../model/models.dart' show nodeKindFromWire;
+import '../model/models.dart' show blockAttributionKey, nodeKindFromWire;
 import 'op.dart';
 
 /// A node as reconstructed from the log.
@@ -187,6 +187,14 @@ class Materializer {
           }
         }
         if (d['updatedAt'] != null) patched['updatedAt'] = d['updatedAt'];
+        if (d.containsKey(blockAttributionKey)) {
+          final attribution = d[blockAttributionKey];
+          if (attribution is Map) {
+            patched[blockAttributionKey] = attribution;
+          } else if (attribution == null) {
+            patched.remove(blockAttributionKey);
+          }
+        }
         pages[pid]!.blocks[bid] = patched;
 
       case OpKind.inkStrokes:

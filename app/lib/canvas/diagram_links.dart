@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../model/models.dart';
 import '../state/app_state.dart';
+import 'object_chrome.dart';
 
 const _anchorGap = 4.0;
 
@@ -85,7 +86,7 @@ Path diagramPath(Rect from, Rect to, DiagramRoute route,
   return path;
 }
 
-typedef _DiagramLink = (DiagramConnection, Path, Offset);
+typedef _DiagramLink = (DiagramConnection, Path, Offset, Offset);
 
 class DiagramLinks extends StatefulWidget {
   const DiagramLinks({super.key, required this.app, required this.visible});
@@ -116,20 +117,15 @@ class _DiagramLinksState extends State<DiagramLinks>
     for (final edge in app.pageProps.diagramConnections) {
       final from = blocks[edge.from], to = blocks[edge.to];
       if (from == null || to == null) continue;
-      final path = diagramPath(app.blockRect(from), app.blockRect(to), edge.route,
+      final path = diagramPath(canvasObjectFrame(app, from),
+          canvasObjectFrame(app, to), edge.route,
           fromSide: edge.fromSide, toSide: edge.toSide);
       if (!path.getBounds().inflate(32).overlaps(widget.visible)) continue;
       final metric = path.computeMetrics().firstOrNull;
       if (metric == null) continue;
       final middle = metric.getTangentForOffset(metric.length / 2);
       if (middle == null) continue;
-      var labelAt = middle.position;
-      if (edge.flow != DiagramFlow.none) {
-        final direction = middle.vector;
-        final normal = Offset(-direction.dy, direction.dx);
-        labelAt += normal * (normal.dy > 0 ? -18 : 18);
-      }
-      links.add((edge, path, labelAt));
+      links.add((edge, path, middle.position, middle.vector));
     }
     final steady = links.where((link) => link.$1.flow == DiagramFlow.none).toList();
     final flowing = links.where((link) => link.$1.flow != DiagramFlow.none).toList();
@@ -158,7 +154,7 @@ class _DiagramLinksState extends State<DiagramLinks>
               ),
             ),
           ),
-        for (final (edge, _, labelAt) in links)
+        for (final (edge, _, labelAt, direction) in links)
           Positioned(
             left: labelAt.dx - 110,
             top: labelAt.dy - 24,
@@ -169,30 +165,11 @@ class _DiagramLinksState extends State<DiagramLinks>
                 ignoring: app.inkToolInHand,
                 child: Listener(
                   onPointerDown: (event) => app.claimedPointers.add(event.pointer),
-                  child: Material(
-                    color: colors.surface,
-                    shape: StadiumBorder(side: BorderSide(color: colors.outlineVariant)),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () => showDiagramConnection(context, app, edge: edge),
-                      child: Tooltip(
-                        message: 'Edit connector',
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                          child: edge.label.isEmpty && edge.icon.isEmpty
-                              ? Icon(Icons.link, size: 13, color: colors.primary)
-                              : ConstrainedBox(
-                                  constraints: const BoxConstraints(maxWidth: 200),
-                                  child: Text(
-                                    [if (edge.icon.isNotEmpty) edge.icon, if (edge.label.isNotEmpty) edge.label].join(' '),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                ),
-                        ),
-                      ),
-                    ),
+                  child: _ConnectorBadge(
+                    edge: edge,
+                    direction: direction,
+                    showAuthor: app.showAuthorBadges,
+                    onEdit: () => showDiagramConnection(context, app, edge: edge),
                   ),
                 ),
               ),
@@ -201,6 +178,124 @@ class _DiagramLinksState extends State<DiagramLinks>
       ],
     );
   }
+}
+
+class _ConnectorBadge extends StatelessWidget {
+  const _ConnectorBadge({required this.edge, required this.direction,
+    required this.showAuthor, required this.onEdit});
+
+  final DiagramConnection edge;
+  final Offset direction;
+  final bool showAuthor;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final flowing = edge.flow != DiagramFlow.none;
+    final label = [
+      if (edge.icon.isNotEmpty) edge.icon,
+      if (edge.label.isNotEmpty) edge.label,
+    ].join(' ');
+    return CustomPaint(
+      painter: _BadgeHull(
+        direction: direction,
+        pipeWidth: flowing ? 2.4 * edge.flowWidth : 0,
+        fill: flowing ? _pipeFill(colors.primary, colors.surface) : colors.surface,
+        border: flowing ? _pipeBorder(colors.primary) : colors.outlineVariant,
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                onTap: onEdit,
+                child: Tooltip(
+                  message: 'Edit connector',
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+                    child: label.isEmpty
+                        ? Icon(Icons.link, size: 13, color: colors.primary)
+                        : ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 172),
+                            child: Text(label, maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11)),
+                          ),
+                  ),
+                ),
+              ),
+              if (showAuthor && edge.attribution.latest != null)
+                CanvasAuthorBadge(attribution: edge.attribution),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Color _pipeFill(Color color, Color surface) =>
+    Color.alphaBlend(color.withValues(alpha: .17), surface);
+
+Color _pipeBorder(Color color) => color.withValues(alpha: .48);
+
+class _BadgeHull extends CustomPainter {
+  const _BadgeHull({required this.direction, required this.pipeWidth,
+    required this.fill, required this.border});
+
+  final Offset direction;
+  final double pipeWidth;
+  final Color fill;
+  final Color border;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    var hull = Path()..addRRect(RRect.fromRectAndRadius(
+        rect, Radius.circular(size.height / 2)));
+    if (pipeWidth > 0) {
+      final center = rect.center;
+      final normal = Offset(-direction.dy, direction.dx);
+      final rim = math.min(
+        direction.dx == 0 ? double.infinity : size.width / 2 / direction.dx.abs(),
+        direction.dy == 0 ? double.infinity : size.height / 2 / direction.dy.abs(),
+      );
+      final tip = direction * (rim + 12);
+      final shoulder = direction * (rim * .56);
+      final narrow = normal * (pipeWidth / 2);
+      final wide = normal * math.min(size.height * .38, rim * .69);
+      final a = center - tip + narrow, b = center + tip + narrow;
+      final c = center + tip - narrow, d = center - tip - narrow;
+      final ab = center + wide, cd = center - wide;
+      final join = Path()
+        ..moveTo(a.dx, a.dy)
+        ..quadraticBezierTo((center - shoulder + narrow).dx,
+            (center - shoulder + narrow).dy, ab.dx, ab.dy)
+        ..quadraticBezierTo((center + shoulder + narrow).dx,
+            (center + shoulder + narrow).dy, b.dx, b.dy)
+        ..lineTo(c.dx, c.dy)
+        ..quadraticBezierTo((center + shoulder - narrow).dx,
+            (center + shoulder - narrow).dy, cd.dx, cd.dy)
+        ..quadraticBezierTo((center - shoulder - narrow).dx,
+            (center - shoulder - narrow).dy, d.dx, d.dy)
+        ..close();
+      hull = Path.combine(PathOperation.union, hull, join);
+    }
+    canvas
+      ..drawPath(hull, Paint()..color = fill)
+      ..drawPath(hull, Paint()..color = border..style = PaintingStyle.stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BadgeHull old) =>
+      old.direction != direction || old.pipeWidth != pipeWidth ||
+      old.fill != fill || old.border != border;
 }
 
 class DiagramAnchors extends StatefulWidget {
@@ -235,8 +330,8 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
     var distance = _radius * 2.5;
     Block? body;
     for (final block in widget.app.blocks) {
-      if (block.id == from) continue;
-      final rect = widget.app.blockRect(block);
+      if (block.id == from || !block.canAnchor) continue;
+      final rect = canvasObjectFrame(widget.app, block);
       if (rect.inflate(_anchorGap + distance).contains(at)) {
         for (final side in DiagramSide.values) {
           final delta = (diagramAnchor(rect, side) - at).distance;
@@ -251,7 +346,7 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
       }
     }
     if (anchor != null || body == null) return anchor;
-    final rect = widget.app.blockRect(body);
+    final rect = canvasObjectFrame(widget.app, body);
     final side = DiagramSide.values.reduce((a, b) =>
         (diagramAnchor(rect, a) - at).distanceSquared <=
                 (diagramAnchor(rect, b) - at).distanceSquared ? a : b);
@@ -307,12 +402,12 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
     final to = target == null ? null : app.blockById(target.$1);
     final end = (to == null || target == null)
         ? _position
-        : diagramAnchor(app.blockRect(to), target.$2);
+        : diagramAnchor(canvasObjectFrame(app, to), target.$2);
     final active = [
       for (final b in app.blocks)
-        if ((b.isDiagramCard || app.selectedIds.contains(b.id) ||
+        if (b.canAnchor && (b.isDiagramCard || app.selectedIds.contains(b.id) ||
                 b.id == source?.$1 || b.id == target?.$1) &&
-            widget.visible.overlaps(app.blockRect(b).inflate(_anchorGap + _radius)))
+            widget.visible.overlaps(canvasObjectFrame(app, b).inflate(_anchorGap + _radius)))
           b,
     ];
     return Stack(
@@ -322,7 +417,7 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(painter: _AnchorPreview(
-                diagramAnchor(app.blockRect(from), source.$2), end,
+                diagramAnchor(canvasObjectFrame(app, from), source.$2), end,
                 colors.primary, 2 / widget.scale,
               )),
             ),
@@ -335,7 +430,7 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
   }
 
   Widget _handle(Block b, DiagramSide side, ColorScheme colors, bool target) {
-    final rect = widget.app.blockRect(b);
+    final rect = canvasObjectFrame(widget.app, b);
     final at = diagramAnchor(rect, side);
     final edgeLength = _outward(side).dx == 0 ? rect.width : rect.height;
     final radius = math.min(_radius, math.max(3.0, edgeLength * .27 - 1));
@@ -401,7 +496,7 @@ class _LinkPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round;
-    for (final (edge, path, _) in links) {
+    for (final (edge, path, _, _) in links) {
       paint.strokeWidth = edge.stroke == DiagramStroke.doubleLine ? 1.6 : 2.4;
       if (edge.stroke == DiagramStroke.solid) {
         canvas.drawPath(path, paint);
@@ -445,7 +540,7 @@ class _LinkPainter extends CustomPainter {
 class _FlowPainter extends CustomPainter {
   _FlowPainter(List<_DiagramLink> links, this.color, this.surface, this.phase)
       : lines = [
-          for (final (edge, path, _) in links)
+          for (final (edge, path, _, _) in links)
             (edge, path, path.computeMetrics().toList()),
         ],
         super(repaint: phase);
@@ -458,12 +553,12 @@ class _FlowPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final outline = Paint()
-      ..color = color.withValues(alpha: .48)
+      ..color = _pipeBorder(color)
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round;
     final pipe = Paint()
-      ..color = Color.alphaBlend(color.withValues(alpha: .17), surface)
+      ..color = _pipeFill(color, surface)
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round;
@@ -532,7 +627,7 @@ Future<void> showDiagramConnection(BuildContext context, AppState app,
   final hostPage = app.pageId;
   final targets = {
     for (final card in app.blocks)
-      if (card.id != start) card.id: _title(app, card),
+      if (card.id != start && card.canAnchor) card.id: _title(app, card),
   };
   if (targets.isEmpty) {
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
