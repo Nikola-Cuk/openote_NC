@@ -68,4 +68,95 @@ void main() {
     expect(find.text('Import'), findsOneWidget);
     expect(find.text('Done'), findsOneWidget);
   });
+
+  testWidgets('top navigator keeps search results across notebook switches',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final tmp = Directory.systemTemp.createTempSync('onote_top_nav_');
+    late AppState app;
+    late String alphaId;
+    late String betaId;
+    late String alphaPage;
+    late String betaPage;
+    late String alternateSection;
+    AppState.syncLogEnabled = false;
+    addTearDown(() {
+      app.dispose();
+      AppState.syncLogEnabled = true;
+      try {
+        tmp.deleteSync(recursive: true);
+      } on FileSystemException {
+        // A platform file handle may still be closing.
+      }
+    });
+    await tester.runAsync(() async {
+      final repo = await Repository.openAt(tmp);
+      alphaId = (await repo.createNotebook('Alpha')).id;
+      betaId = (await repo.createNotebook('Beta')).id;
+      app = AppState(repo);
+      await app.selectNotebook(betaId);
+      betaPage = app.pageId!;
+      app.renameNode(betaPage, 'Match second');
+      await app.selectNotebook(alphaId);
+      alphaPage = app.pageId!;
+      app.renameNode(alphaPage, 'Match first');
+      await app.addSection();
+      alternateSection = app.activeSectionId!;
+      app.renameNode(alternateSection, 'Alternate section');
+      await app.selectPage(alphaPage);
+    });
+
+    await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: kOnoteLocalizations,
+      supportedLocales: kOnoteLocales,
+      home: Scaffold(
+        body: Column(children: [
+          ListenableBuilder(
+            listenable: app,
+            builder: (context, _) => Sidebar(app: app, top: true),
+          ),
+          const Expanded(child: SizedBox()),
+        ]),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final book = find.byKey(const ValueKey('notebook-picker'));
+    final section = find.byKey(const ValueKey('section-picker'));
+    final search = find.byKey(const ValueKey('notebook-search'));
+    final results = find.byKey(const ValueKey('notebook-search-results'));
+    expect(tester.getTopLeft(book).dy,
+        lessThan(tester.getTopLeft(find.text('Match first')).dy));
+    await tester.tap(section);
+    await tester.pumpAndSettle();
+    expect(find.text('Alternate section'), findsOneWidget);
+    await tester.tapAt(const Offset(5, 300));
+    await tester.pumpAndSettle();
+    expect(app.activeSectionId, isNot(alternateSection));
+
+    await tester.enterText(search, 'Match');
+    await tester.pumpAndSettle();
+    final first = find.text('Alpha > Section 1 > Match first');
+    final second = find.text('Beta > Section 1 > Match second');
+    expect(first, findsOneWidget);
+    expect(second, findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(second);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(app.notebookId, betaId);
+    expect(app.pageId, betaPage);
+    expect(results, findsOneWidget);
+    expect(first, findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(first);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(app.notebookId, alphaId);
+    expect(app.pageId, alphaPage);
+    expect(tester.widget<TextField>(search).controller!.text, 'Match');
+    expect(second, findsOneWidget);
+    app.cancelPendingSave();
+  });
 }

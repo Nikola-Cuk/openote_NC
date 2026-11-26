@@ -121,7 +121,7 @@ void main() {
     await t.tapAt(app.canvas.pageToScreen(const Offset(300, 500)));
     await t.pump();
     await t.pump(const Duration(milliseconds: 60));
-    final after = app.blocks.length;
+    expect(app.blocks, hasLength(1), reason: 'clicking the page starts a draft');
 
     // And now back to the title, which is the gesture that was broken.
     expect(titleWords(), findsOneWidget, reason: 'the title is a label again');
@@ -129,8 +129,8 @@ void main() {
     await t.pump();
     await t.pump(const Duration(milliseconds: 60));
 
-    expect(app.blocks, hasLength(after),
-        reason: 'going back to the title made another box');
+    expect(app.blocks, isEmpty,
+        reason: 'the empty draft disappears and the title creates no new box');
     app.cancelPendingSave();
   });
 

@@ -134,8 +134,9 @@ class _Reveal extends StatelessWidget {
 /// a Home pane (favourites + recents), a remembered per-section page so
 /// browsing never loses your place, and the rail.
 class Sidebar extends StatefulWidget {
-  const Sidebar({super.key, required this.app});
+  const Sidebar({super.key, required this.app, this.top = false});
   final AppState app;
+  final bool top;
 
   @override
   State<Sidebar> createState() => _SidebarState();
@@ -143,20 +144,44 @@ class Sidebar extends StatefulWidget {
 
 class _SidebarState extends State<Sidebar> {
   final _searchCtl = TextEditingController();
+  final _searchOverlay = OverlayPortalController();
+  final _searchAnchor = LayerLink();
+  final _tabKeys = <String, GlobalKey>{};
+  final _tabScroll = ScrollController();
   String _query = '';
+  String? _searchOrigin;
+  String? _visiblePage;
+  NotebookSearchHit? _selectedHit;
+  bool _openingMatch = false;
 
   AppState get app => widget.app;
 
   @override
   void dispose() {
     _searchCtl.dispose();
+    _tabScroll.dispose();
     super.dispose();
   }
 
   void _clearSearch() {
     _searchCtl.clear();
-    _searchKey = null;
-    setState(() => _query = '');
+    _changeSearch('');
+  }
+
+  void _changeSearch(String value) {
+    setState(() {
+      _query = value;
+      _searchKey = null;
+      _searchOrigin = app.notebookId;
+      _selectedHit = null;
+    });
+    if (widget.top) {
+      if (value.trim().isEmpty) {
+        _searchOverlay.hide();
+      } else if (!_searchOverlay.isShowing) {
+        _searchOverlay.show();
+      }
+    }
   }
 
   @override
@@ -164,6 +189,7 @@ class _SidebarState extends State<Sidebar> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final searching = _query.trim().isNotEmpty;
 
+    if (widget.top) return _topNavigation(context);
     if (app.navCollapsed) return _NavRail(app: app, dark: dark);
 
     return Row(
@@ -210,6 +236,232 @@ class _SidebarState extends State<Sidebar> {
     );
   }
 
+  Widget _topNavigation(BuildContext context) {
+    final l = L.of(context);
+    final current = app.notebooks.where((n) => n.id == app.notebookId).firstOrNull;
+    final section = app.activeSection;
+    final sections = app.nodes.where((n) => n.kind == NodeKind.section);
+    final searchWidth = (MediaQuery.sizeOf(context).width * .34).clamp(150.0, 360.0);
+    return Material(
+      color: context.surfaces.chrome2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Tooltip(
+                          message: l.navNotebooksTip,
+                          child: TextButton(
+                            key: const ValueKey('notebook-picker'),
+                            onPressed: () => showNotebookManager(context, app),
+                            child: _pickerLabel(
+                              current?.title ?? l.navNotebooksTip,
+                              Icons.menu_book_outlined,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right, size: 16),
+                      Flexible(
+                        child: PopupMenuButton<TreeNode>(
+                          key: const ValueKey('section-picker'),
+                          tooltip: l.navShowSections,
+                          initialValue: section,
+                          onSelected: (node) => app.activateSection(node.id),
+                          itemBuilder: (context) => [
+                            for (final node in sections)
+                              PopupMenuItem(
+                                value: node,
+                                child: Text([
+                                  if (app.node(node.parentId) case final group?)
+                                    group.title,
+                                  node.title,
+                                ].join(' › ')),
+                              ),
+                            if (sections.isNotEmpty) const PopupMenuDivider(),
+                            PopupMenuItem<TreeNode>(
+                              onTap: app.addSection,
+                              enabled: app.notebookId != null,
+                              child: Text(l.navNewSection),
+                            ),
+                          ],
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+                            child: _pickerLabel(section?.title ?? l.navSection,
+                                Icons.folder_outlined),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.account_tree_outlined, size: 17),
+                        tooltip: l.navShowSections,
+                        onPressed: app.notebookId == null ? null : _openOrganizer,
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: searchWidth,
+                  child: CompositedTransformTarget(
+                    link: _searchAnchor,
+                    child: OverlayPortal(
+                      controller: _searchOverlay,
+                      overlayChildBuilder: _topSearchResults,
+                      child: _searchRow(context),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(app.navCollapsed ? Icons.expand_more : Icons.expand_less),
+                  tooltip: app.navCollapsed ? l.navExpand : l.navCollapse,
+                  onPressed: app.toggleNavCollapsed,
+                ),
+              ],
+            ),
+          ),
+          if (!app.navCollapsed && section != null) _pageTabs(context, section),
+          const Divider(height: 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _pickerLabel(String label, IconData icon) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 17),
+          const SizedBox(width: 6),
+          Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+          const Icon(Icons.arrow_drop_down, size: 16),
+        ],
+      );
+
+  void _openOrganizer() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        child: SizedBox(
+          width: 460,
+          height: 520,
+          child: ListenableBuilder(
+            listenable: app,
+            builder: (context, _) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+                Expanded(child: _NavPaneKeys(app: app, child: _twoColumnBody(context))),
+                const Divider(height: 1),
+                _footer(context),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pageTabs(BuildContext context, TreeNode section) {
+    final pages = app.pagesOf(section.id);
+    final ids = pages.map((page) => page.id).toSet();
+    _tabKeys.removeWhere((id, _) => !ids.contains(id));
+    final tabs = <Widget>[];
+    int? hiddenLevel;
+    for (var i = 0; i < pages.length; i++) {
+      final page = pages[i];
+      if (hiddenLevel != null && page.level <= hiddenLevel) hiddenLevel = null;
+      if (hiddenLevel != null && page.id != app.pageId) continue;
+      final hasChildren = i + 1 < pages.length && pages[i + 1].level > page.level;
+      final collapsed = app.collapsedPages.contains(page.id);
+      tabs.add(_PageTile(
+        key: _tabKeys.putIfAbsent(page.id, () => GlobalKey()),
+        app: app,
+        page: page,
+        hasChildren: hasChildren,
+        collapsed: collapsed,
+        horizontal: true,
+      ));
+      if (hasChildren && collapsed) hiddenLevel = page.level;
+    }
+    if (_visiblePage != app.pageId) {
+      _visiblePage = app.pageId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final target = _tabKeys[_visiblePage]?.currentContext;
+        if (mounted && target != null) {
+          Scrollable.ensureVisible(target, alignmentPolicy:
+              ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+          Scrollable.ensureVisible(target, alignmentPolicy:
+              ScrollPositionAlignmentPolicy.keepVisibleAtStart);
+        }
+      });
+    }
+    return SizedBox(
+      height: 40,
+      child: Row(
+        children: [
+          Expanded(
+            child: _NavPaneKeys(
+              app: app,
+              child: Scrollbar(
+                controller: _tabScroll,
+                thickness: 3,
+                child: SingleChildScrollView(
+                  key: PageStorageKey(section.id),
+                  controller: _tabScroll,
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Row(children: tabs),
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: L.of(context).navNewPageIn(section.title),
+            onPressed: () => app.addPage(sectionId: section.id),
+            icon: const Icon(Icons.add, size: 18),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _topSearchResults(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    return CompositedTransformFollower(
+      link: _searchAnchor,
+      showWhenUnlinked: false,
+      targetAnchor: Alignment.bottomRight,
+      followerAnchor: Alignment.topRight,
+      child: Align(
+        alignment: Alignment.topRight,
+        child: Material(
+          key: const ValueKey('notebook-search-results'),
+          elevation: 12,
+          borderRadius: BorderRadius.circular(10),
+          clipBehavior: Clip.antiAlias,
+          color: context.surfaces.chrome,
+          child: SizedBox(
+            width: (screen.width - 72).clamp(0.0, 450.0),
+            height: (screen.height * .46).clamp(0.0, 360.0),
+            child: _searchResults(context),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── Search / quick-jump ───────────────────────────────────────────────
 
   Widget _searchRow(BuildContext context) {
@@ -223,8 +475,9 @@ class _SidebarState extends State<Sidebar> {
             child: SizedBox(
               height: 32,
               child: TextField(
+                key: const ValueKey('notebook-search'),
                 controller: _searchCtl,
-                onChanged: (v) => setState(() => _query = v),
+                onChanged: _changeSearch,
                 style: const TextStyle(fontSize: 13),
                 decoration: InputDecoration(
                   isDense: true,
@@ -262,21 +515,21 @@ class _SidebarState extends State<Sidebar> {
     );
   }
 
-  (String, String?, int, int)? _searchKey;
+  (String, String?, int)? _searchKey;
   List<NotebookSearchHit> _currentMatches = const [];
   Future<List<NotebookSearchHit>>? _otherMatches;
 
   void _prepareSearch(String q) {
-    final key = (q, app.notebookId, app.gateRevision, app.nodesRevision);
+    final key = (q, _searchOrigin, app.gateRevision);
     if (_searchKey == key) return;
     _searchKey = key;
-    final active = app.notebooks.where((nb) => nb.id == app.notebookId).firstOrNull;
+    final active = app.notebooks.where((nb) => nb.id == _searchOrigin).firstOrNull;
     _currentMatches = active == null ? const [] : app.searchNotebook(active, q);
     _otherMatches = _scanOtherNotebooks(q, key);
   }
 
   Future<List<NotebookSearchHit>> _scanOtherNotebooks(
-      String q, (String, String?, int, int) key) async {
+      String q, (String, String?, int) key) async {
     final others = app.notebooks.where((nb) => nb.id != key.$2).toList();
     final matches = <NotebookSearchHit>[];
     for (final notebook in others) {
@@ -294,15 +547,21 @@ class _SidebarState extends State<Sidebar> {
   }
 
   Future<void> _openMatch(NotebookSearchHit hit) async {
-    _clearSearch();
-    if (app.notebookId != hit.notebookId) {
-      await app.selectNotebook(hit.notebookId);
-    }
-    if (!mounted) return;
-    if (hit.kind == NodeKind.page) {
-      await app.selectPage(hit.nodeId);
-    } else {
-      await app.activateSection(hit.nodeId);
+    if (_openingMatch) return;
+    _openingMatch = true;
+    setState(() => _selectedHit = hit);
+    try {
+      if (app.notebookId != hit.notebookId) {
+        await app.selectNotebook(hit.notebookId);
+      }
+      if (!mounted || app.node(hit.nodeId) == null) return;
+      if (hit.kind == NodeKind.page) {
+        if (app.pageId != hit.nodeId) await app.selectPage(hit.nodeId);
+      } else {
+        await app.activateSection(hit.nodeId);
+      }
+    } finally {
+      _openingMatch = false;
     }
   }
 
@@ -347,6 +606,7 @@ class _SidebarState extends State<Sidebar> {
       color: Theme.of(context).colorScheme.primary,
     );
     return ListTile(
+      selected: identical(hit, _selectedHit),
       dense: true,
       visualDensity: VisualDensity.compact,
       leading: Icon(hit.content
@@ -1762,15 +2022,18 @@ enum _DropZone { none, before, into, after }
 
 class _PageTile extends StatefulWidget {
   const _PageTile({
+    super.key,
     required this.app,
     required this.page,
     this.hasChildren = false,
     this.collapsed = false,
+    this.horizontal = false,
   });
   final AppState app;
   final TreeNode page;
   final bool hasChildren;
   final bool collapsed;
+  final bool horizontal;
 
   @override
   State<_PageTile> createState() => _PageTileState();
@@ -1805,7 +2068,7 @@ class _PageTileState extends State<_PageTile> {
   @override
   Widget build(BuildContext context) {
     // Drop a page ONTO this page → make it a subpage (ORG-6).
-    return DragTarget<String>(
+    final target = DragTarget<String>(
       onWillAcceptWithDetails: (d) =>
           d.data != page.id && app.node(d.data)?.kind == NodeKind.page,
       onMove: (d) {
@@ -1836,14 +2099,18 @@ class _PageTileState extends State<_PageTile> {
         if (active && (_zone == _DropZone.before || _zone == _DropZone.after)) {
           // An insertion line, the universal "it will land here" signal.
           final line = Container(
-            height: 2,
+            width: widget.horizontal ? 2 : null,
+            height: widget.horizontal ? null : 2,
             color: Theme.of(context).colorScheme.primary,
           );
-          return Column(mainAxisSize: MainAxisSize.min, children: [
+          final children = [
             if (_zone == _DropZone.before) line,
-            tile,
+            if (widget.horizontal) Expanded(child: tile) else tile,
             if (_zone == _DropZone.after) line,
-          ]);
+          ];
+          return widget.horizontal
+              ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: children)
+              : Column(mainAxisSize: MainAxisSize.min, children: children);
         }
         // Don't wrap in a Draggable while renaming — the text field needs the
         // pointer for caret placement and selection.
@@ -1857,6 +2124,11 @@ class _PageTileState extends State<_PageTile> {
         );
       },
     );
+    if (!widget.horizontal) return target;
+    return Padding(
+      padding: const EdgeInsets.only(right: 3, bottom: 4),
+      child: SizedBox(width: page.level == 0 ? 160 : 180, child: target),
+    );
   }
 
   /// Where in the tile a drag currently hovers.
@@ -1868,10 +2140,11 @@ class _PageTileState extends State<_PageTile> {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return _DropZone.into;
     final local = box.globalToLocal(globalOffset);
-    final h = box.size.height;
-    if (h <= 0) return _DropZone.into;
-    if (local.dy < h * 0.25) return _DropZone.before;
-    if (local.dy > h * 0.75) return _DropZone.after;
+    final extent = widget.horizontal ? box.size.width : box.size.height;
+    final position = widget.horizontal ? local.dx : local.dy;
+    if (extent <= 0) return _DropZone.into;
+    if (position < extent * 0.25) return _DropZone.before;
+    if (position > extent * 0.75) return _DropZone.after;
     return _DropZone.into;
   }
 
@@ -1885,9 +2158,16 @@ class _PageTileState extends State<_PageTile> {
       color: selected || subpageTarget ? scheme.primary : null,
     );
     return Material(
-      color:
-          selected ? scheme.primary.withValues(alpha: .10) : Colors.transparent,
+      shape: widget.horizontal
+          ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(7))
+          : null,
+      color: selected
+          ? scheme.primary.withValues(alpha: .13)
+          : widget.horizontal
+              ? context.surfaces.chrome
+              : Colors.transparent,
       child: InkWell(
+        borderRadius: widget.horizontal ? BorderRadius.circular(7) : null,
         mouseCursor: WidgetStateMouseCursor.clickable,
         focusNode: _rowFocus,
         onFocusChange: (has) {
@@ -1921,11 +2201,12 @@ class _PageTileState extends State<_PageTile> {
                   color: scheme.primary.withValues(alpha: .06))
               : null,
           padding: EdgeInsets.only(
-              left: 8.0 + page.level * 15, right: 4, top: 6, bottom: 6),
+              left: 8.0 + page.level * (widget.horizontal ? 5 : 15),
+              right: widget.horizontal ? 8 : 4, top: 6, bottom: 6),
           child: Row(
             children: [
               // Collapse chevron (only when the page has subpages)
-              SizedBox(
+              if (!widget.horizontal || widget.hasChildren) SizedBox(
                 width: 16,
                 child: widget.hasChildren
                     ? InkWell(

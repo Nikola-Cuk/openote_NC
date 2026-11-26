@@ -1347,6 +1347,7 @@ class _AppShellState extends State<AppShell> {
   Widget _navigator() {
     final key = <Object?>[
       app.nodesRevision,
+      app.gateRevision,
       app.pageId,
       app.activeSectionId,
       app.notebookId,
@@ -1369,7 +1370,7 @@ class _AppShellState extends State<AppShell> {
       return cached;
     }
     _navKey = key;
-    return _navCache = Sidebar(app: app);
+    return _navCache = Sidebar(app: app, top: true);
   }
 
   static bool _listEq(List<Object?> a, List<Object?> b) {
@@ -1418,70 +1419,39 @@ class _AppShellState extends State<AppShell> {
           body: Listener(
             onPointerDown: (_) => _ring.value = null,
             child: Stack(children: [
-            Row(
-            children: [
-              _regionWrap(_Region.sidebar, _navigator()),
-              const VerticalDivider(width: 1),
-              Expanded(
-                child: Column(
-                  children: [
-                    _regionWrap(_Region.toolbar, CommandBar(app: app)),
-                    // **No third band.** The page controls it carried are
-                    // the Page tab now, and the equation palette borrows the
-                    // command row — see `command_faces.dart`. What that band
-                    // existed to protect is untouched: the chrome is ONE
-                    // height in every state of the app, so the canvas box
-                    // never moves and there is no compensating pan to write.
-                    if (app.findOpen) _FindBar(app: app),
-                    // The breadcrumb is CONTEXT, not a second navigator
-                    // (§7d). With the navigator expanded it repeats what is
-                    // already on screen two inches to the left, so it spends a
-                    // full-width row saying nothing. Collapsed — or on the
-                    // rail — it is the only place the notebook and section are
-                    // named, and it earns the row.
-                    if (page != null && app.navCollapsed)
-                      _PageHeader(app: app, page: page),
-                    // A notebook that is not all here says so, above the page
-                    // rather than over it: one line, no focus, nothing
-                    // covered. It renders nothing at all unless there is
-                    // something unfinished.
-                    UnfinishedImportBar(app: app),
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            // The gate is HERE, at the point the canvas would
-                            // be built, rather than only on the click that
-                            // opened the page. A page can become locked while
-                            // it is on screen — the policy expires, or "Lock
-                            // now" is pressed — and gating only the click
-                            // would leave the content sitting there.
-                            child: _regionWrap(
-                                _Region.page,
-                                page == null
-                                    ? _EmptyState(app: app)
-                                    : app.isLocked(page.id)
-                                        ? _LockedPage(app: app, page: page)
-                                        : _canvasKeys(PageCanvas(
-                                            key: ValueKey(app.pageId),
-                                            state: app))),
-                          ),
-                          if (panel != null) ...[
-                            const VerticalDivider(width: 1),
-                            PanelEntryFocus(
-                              node: _panelEntry,
-                              child: _regionWrap(_Region.panel, panel),
-                            ),
-                          ],
-                        ],
+            Column(
+              children: [
+                _regionWrap(_Region.toolbar, CommandBar(app: app)),
+                _regionWrap(_Region.sidebar, _navigator()),
+                if (app.findOpen) _FindBar(app: app),
+                UnfinishedImportBar(app: app),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _regionWrap(
+                          _Region.page,
+                          page == null
+                              ? _EmptyState(app: app)
+                              : app.isLocked(page.id)
+                                  ? _LockedPage(app: app, page: page)
+                                  : _canvasKeys(PageCanvas(
+                                      key: ValueKey(app.pageId), state: app)),
+                        ),
                       ),
-                    ),
-                    _StatusBar(app: app),
-                  ],
+                      if (panel != null) ...[
+                        const VerticalDivider(width: 1),
+                        PanelEntryFocus(
+                          node: _panelEntry,
+                          child: _regionWrap(_Region.panel, panel),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+                _StatusBar(app: app),
+              ],
+            ),
             AlertPopup(app: app, regionFocus: _alertRegion),
             ImportProgressCard(app: app),
           ]),
@@ -1647,41 +1617,6 @@ class _FindBarState extends State<_FindBar> {
             tooltip: L.of(context).shellCloseEsc,
             onPressed: app.toggleFind,
           ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Slim breadcrumb — the editable TITLE lives in the page itself.
-class _PageHeader extends StatelessWidget {
-  const _PageHeader({required this.app, required this.page});
-  final AppState app;
-  final TreeNode page;
-
-  @override
-  Widget build(BuildContext context) {
-    final section = app.node(page.parentId ?? '');
-    final notebook =
-        app.notebooks.firstWhere((n) => n.id == app.notebookId);
-    final crumbStyle =
-        TextStyle(fontSize: 12, color: context.surfaces.textSecondary);
-    return Container(
-      height: 26,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      alignment: Alignment.centerLeft,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border:
-            Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
-      ),
-      child: Row(
-        children: [
-          Text(notebook.title, style: crumbStyle),
-          if (section != null) ...[
-            Text('  ›  ', style: crumbStyle),
-            Text(section.title, style: crumbStyle),
-          ],
         ],
       ),
     );
