@@ -30,8 +30,10 @@ void main() {
     const to = Rect.fromLTWH(220, 162, 130, 70);
     final start = diagramAnchor(from, DiagramSide.right);
     final end = diagramAnchor(to, DiagramSide.top);
-    expect(start, from.centerRight + const Offset(4, 0));
-    expect(end, to.topCenter - const Offset(0, 4));
+    expect(start.dx, from.right + 4);
+    expect(start.dy, inExclusiveRange(from.top, from.center.dy));
+    expect(end.dy, to.top - 4);
+    expect(end.dx, inExclusiveRange(to.left, to.center.dx));
     for (final route in DiagramRoute.values) {
       final metric = diagramPath(from, to, route,
               fromSide: DiagramSide.right, toSide: DiagramSide.top)

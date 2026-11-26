@@ -1031,11 +1031,10 @@ class _BlockViewState extends State<BlockView> {
                       onPanUpdate: _resize,
                       onPanEnd: (_) => _resizeUndoPushed = false,
                       onPanCancel: () => _resizeUndoPushed = false,
-                      child: Align(
-                        alignment: const Alignment(0, .72),
+                      child: Center(
                         child: Container(
                           width: 10,
-                          height: 24,
+                          height: 28,
                           decoration: BoxDecoration(
                             color: primaryColor.withValues(alpha: .85),
                             borderRadius: BorderRadius.circular(5),
@@ -1060,8 +1059,7 @@ class _BlockViewState extends State<BlockView> {
                           _resizeBy(d, width: false, height: true),
                       onPanEnd: (_) => _resizeUndoPushed = false,
                       onPanCancel: () => _resizeUndoPushed = false,
-                      child: Align(
-                        alignment: const Alignment(-.52, 0),
+                      child: Center(
                         child: Container(
                           key: ValueKey('resize-height-${b.id}'),
                           width: 28,

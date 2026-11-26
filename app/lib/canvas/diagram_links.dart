@@ -11,10 +11,11 @@ const _anchorGap = 4.0;
 
 Offset diagramAnchor(Rect rect, DiagramSide side) {
   final edge = switch (side) {
-    DiagramSide.top => rect.topCenter,
-    DiagramSide.right => rect.centerRight,
-    DiagramSide.bottom => rect.bottomCenter,
-    DiagramSide.left => rect.centerLeft,
+    // Keep midpoint dragging available for the move bar and resize grips.
+    DiagramSide.top => Offset(rect.left + rect.width * .23, rect.top),
+    DiagramSide.right => Offset(rect.right, rect.top + rect.height * .23),
+    DiagramSide.bottom => Offset(rect.left + rect.width * .23, rect.bottom),
+    DiagramSide.left => Offset(rect.left, rect.top + rect.height * .23),
   };
   return edge + _outward(side) * _anchorGap;
 }
@@ -334,13 +335,16 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
   }
 
   Widget _handle(Block b, DiagramSide side, ColorScheme colors, bool target) {
-    final at = diagramAnchor(widget.app.blockRect(b), side);
+    final rect = widget.app.blockRect(b);
+    final at = diagramAnchor(rect, side);
+    final edgeLength = _outward(side).dx == 0 ? rect.width : rect.height;
+    final radius = math.min(_radius, math.max(3.0, edgeLength * .27 - 1));
     return Positioned(
       key: ValueKey('connector-anchor-${b.id}-${side.name}'),
-      left: at.dx - _radius,
-      top: at.dy - _radius,
-      width: _radius * 2,
-      height: _radius * 2,
+      left: at.dx - radius,
+      top: at.dy - radius,
+      width: radius * 2,
+      height: radius * 2,
       child: MouseRegion(
         cursor: SystemMouseCursors.precise,
         child: Listener(
@@ -356,7 +360,7 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
                 shape: BoxShape.circle,
                 border: Border.all(color: colors.primary, width: 1.6 / widget.scale),
               ),
-              child: SizedBox.square(dimension: _radius * 1.4),
+              child: SizedBox.square(dimension: radius * 1.4),
             ),
           ),
         ),
