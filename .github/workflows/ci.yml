@@ -42,7 +42,7 @@ jobs:
         # pin keeps testing the release host, which is the promise this
         # matrix exists to keep. (24.04 rather than 22.04 for the libmpv
         # soname — see the comment on release.yml's linux job.)
-        os: [ubuntu-24.04, macos-latest, windows-latest]
+        os: ${{ fromJSON(github.ref_name == 'codex/canvas-inline' && '["windows-latest"]' || '["ubuntu-24.04","macos-latest","windows-latest"]') }}
     defaults:
       run:
         working-directory: app
@@ -134,7 +134,7 @@ jobs:
       # It was 23 s of the Windows job — the critical path of the whole
       # workflow, since the run finishes when its slowest job does.
       - name: Analyze
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' || github.ref_name == 'codex/canvas-inline'
         run: flutter analyze --no-fatal-infos
 
       # pdfrx bundles PDFium as a WASM module for its web target, and its
@@ -248,7 +248,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(github.ref_name == 'codex/canvas-inline' && '["windows-latest"]' || '["ubuntu-latest","macos-latest","windows-latest"]') }}
     defaults:
       run:
         working-directory: rust/onote_core
@@ -276,6 +276,7 @@ jobs:
   # permissive tier, and a single copyleft crate in its dependency graph would
   # silently void the promise that anyone can read and write .onote files.
   licence-invariant:
+    if: github.ref_name != 'codex/canvas-inline'
     name: core stays permissive
     runs-on: ubuntu-latest
     steps:

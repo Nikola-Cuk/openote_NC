@@ -119,6 +119,66 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('dragging a card anchor connects an ordinary text box',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.addDiagramCard(const Offset(64, 180));
+      final card = app.blocks.single;
+      final note = app.addBlock(Block(
+        type: BlockType.text,
+        x: 470,
+        y: 220,
+        w: 180,
+        content: {'text': 'Other block', 'autoWidth': false},
+      ));
+      app.select(null);
+      await pump(t, listen: true);
+
+      for (final side in DiagramSide.values) {
+        expect(find.byKey(ValueKey('connector-anchor-${card.id}-${side.name}')),
+            findsOneWidget);
+      }
+      final from = find.byKey(ValueKey('connector-anchor-${card.id}-right'));
+      final target = find.byKey(ValueKey('${note.id}#${app.docRevision}'));
+      final start = t.getCenter(from);
+      final end = t.getCenter(target);
+      final gesture = await t.startGesture(start, kind: PointerDeviceKind.mouse);
+      await gesture.moveTo(end);
+      await t.pump();
+      await gesture.up();
+      await t.pumpAndSettle();
+      expect(find.text('Connect objects'), findsOneWidget);
+
+      await t.tap(find.text('Save'));
+      await t.pumpAndSettle();
+      final edge = app.pageProps.diagramConnections.single;
+      expect(edge.from, card.id);
+      expect(edge.to, note.id);
+      expect(edge.fromSide, DiagramSide.right);
+      expect(edge.toSide, isNotNull);
+      app.cancelPendingSave();
+    });
+
+    testWidgets('bottom handle fixes the height of a normal text box', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final note = app.addBlock(Block(
+        type: BlockType.text,
+        x: 100,
+        y: 180,
+        w: 240,
+        content: {'text': 'Resizable', 'autoWidth': false},
+      ));
+      app.select(note.id);
+      await pump(t, listen: true);
+      final bottom = find.byKey(ValueKey('resize-height-${note.id}'));
+      expect(bottom, findsOneWidget);
+      final before = app.blockRect(note).height;
+      await t.drag(bottom, const Offset(0, 85), kind: PointerDeviceKind.mouse);
+      await t.pumpAndSettle();
+      expect(note.h, greaterThan(before));
+      app.cancelPendingSave();
+    });
+
     testWidgets('A FINGER DRAG PANS; IT DOES NOT MARQUEE', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // A block that a marquee from the centre would certainly catch, so a

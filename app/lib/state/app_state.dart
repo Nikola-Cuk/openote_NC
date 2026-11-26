@@ -9298,8 +9298,25 @@ class AppState extends ChangeNotifier
 
   void addDiagramCard(Offset at) {
     final nb = notebookId;
+    if (nb == null || pageId == null || notebookIsReadOnly(nb)) return;
+    final card = addBlock(Block(
+      type: BlockType.text,
+      x: at.dx,
+      y: at.dy,
+      w: 320,
+      h: 160,
+      content: {Block.diagramCardKey: true, 'text': '', 'autoWidth': false},
+    ));
+    select(card.id, edit: true);
+  }
+
+  void attachDiagramCanvas(String cardId) {
+    final card = blockById(cardId);
+    final nb = notebookId;
     final parent = pageId == null ? null : node(pageId!);
-    if (nb == null || parent == null || notebookIsReadOnly(nb)) return;
+    if (card == null || !card.isDiagramCard || card.textLocked ||
+        card.diagramCanvasPageId != null || nb == null ||
+        parent == null || notebookIsReadOnly(nb)) return;
     final section = parent.parentId;
     if (section == null) return;
     final pages = pagesOf(section);
@@ -9324,30 +9341,15 @@ class AppState extends ChangeNotifier
       _putNode(nb, page);
     }
     reloadNodes();
-    final card = addBlock(Block(
-      type: BlockType.embed,
-      x: at.dx,
-      y: at.dy,
-      w: 320,
-      h: 200,
-      content: {
-        Block.diagramCardKey: true,
-        'ref': {
-          'notebookId': null,
-          'pageId': canvasPage.id,
-          'target': {'kind': 'page'},
-        },
-        'scale': 'fit',
-      },
-    ));
-    select(card.id);
+    pushUndo();
+    card.content[Block.diagramCanvasKey] = canvasPage.id;
+    updateBlock(card);
   }
 
   void saveDiagramConnection(DiagramConnection edge) {
     final nb = notebookId;
     if (nb == null || notebookIsReadOnly(nb) || edge.from == edge.to ||
-        blockById(edge.from)?.isDiagramCard != true ||
-        blockById(edge.to)?.isDiagramCard != true) return;
+        blockById(edge.from) == null || blockById(edge.to) == null) return;
     pushUndo();
     pageProps.diagramConnections = [
       ...pageProps.diagramConnections.where((previous) => previous.id != edge.id),

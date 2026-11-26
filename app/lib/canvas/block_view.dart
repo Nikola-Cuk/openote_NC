@@ -177,7 +177,8 @@ class _BlockViewState extends State<BlockView> {
   /// since — OneNote-style: the caret is live but the box itself stays
   /// invisible (no border, no move bar, no resize handles) until the first
   /// keystroke. See [AppState.pendingEmptyBlockId].
-  bool get _pendingEmpty => editing && app.pendingEmptyBlockId == b.id;
+  bool get _pendingEmpty =>
+      !b.isDiagramCard && editing && app.pendingEmptyBlockId == b.id;
 
   bool get _editableType =>
       b.type == BlockType.text ||
@@ -237,7 +238,7 @@ class _BlockViewState extends State<BlockView> {
       // still-empty text box gets the same no-chrome, arrow-keys-navigate
       // treatment as one the click just created — set before select()
       // notifies, so the very first build already sees it.
-      if (b.type == BlockType.text &&
+      if (b.type == BlockType.text && !b.isDiagramCard &&
           (b.content['text'] as String? ?? '').trim().isEmpty) {
         app.pendingEmptyBlockId = b.id;
       }
@@ -601,6 +602,32 @@ class _BlockViewState extends State<BlockView> {
         ),
       );
 
+  Widget _inlineDiagramCard(BuildContext context) {
+    final canvasPage = b.diagramCanvasPageId;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: IconButton(
+            tooltip: canvasPage == null ? 'Add canvas' : 'Open canvas',
+            visualDensity: VisualDensity.compact,
+            iconSize: 15,
+            constraints: const BoxConstraints.tightFor(width: 30, height: 26),
+            padding: EdgeInsets.zero,
+            icon: Icon(canvasPage == null ? Icons.add : Icons.open_in_new),
+            onPressed: canvasPage != null
+                ? () => app.selectPage(canvasPage)
+                : b.textLocked
+                    ? null
+                    : () => app.attachDiagramCanvas(b.id),
+          ),
+        ),
+        Expanded(child: TextBlockView(block: b, app: app)),
+      ],
+    );
+  }
+
   String _a11yLabel() {
     final t = switch (b.type) {
       BlockType.text => b.content['text'] as String? ?? '',
@@ -624,14 +651,6 @@ class _BlockViewState extends State<BlockView> {
 
   bool get _locked => b.locked || b.textLocked;
 
-  /// Height is only draggable for blocks that own one. A text block's height
-  /// comes from its text, so a height handle there would fight the content.
-  bool get _canResizeHeight =>
-      b.type == BlockType.ink ||
-      b.type == BlockType.image ||
-      b.type == BlockType.table ||
-      b.h != null;
-
   void _resize(DragUpdateDetails d) => _resizeBy(d, width: true, height: false);
 
   /// Resize by a drag delta (CANVAS-4).
@@ -654,21 +673,21 @@ class _BlockViewState extends State<BlockView> {
     // Page units, for the reason [_drag] gives: the grips are inside the
     // canvas's transform, so their deltas already are.
     final oldW = b.w;
-    final oldH = b.h ?? app.renderSizes[b.id]?.height;
+    final oldH = app.blockRect(b).height;
 
     if (width) {
       // Manual resize locks the width (text boxes stop auto-growing).
       if (b.type == BlockType.text) b.content['autoWidth'] = false;
       b.w = (b.w + d.delta.dx).clamp(b.isDiagramCard ? 160.0 : 80.0, 4000.0);
     }
-    if (height && oldH != null) {
+    if (height) {
       b.h = (oldH + d.delta.dy).clamp(b.isDiagramCard ? 88.0 : 40.0, 4000.0);
     }
 
     if (b.type == BlockType.ink) {
       _scaleInk(
         sx: width && oldW > 0 ? b.w / oldW : 1.0,
-        sy: height && oldH != null && oldH > 0 && b.h != null
+        sy: height && oldH > 0 && b.h != null
             ? b.h! / oldH
             : 1.0,
       );
@@ -754,6 +773,7 @@ class _BlockViewState extends State<BlockView> {
     }
 
     final content = switch (b.type) {
+      BlockType.text when b.isDiagramCard => _inlineDiagramCard(context),
       BlockType.text => TextBlockView(block: b, app: app),
       BlockType.math => MathBlockView(block: b, app: app),
       BlockType.image => ImageBlockView(block: b, app: app),
@@ -855,6 +875,7 @@ class _BlockViewState extends State<BlockView> {
                   // stored: this must not dirty the page or survive the click.
                   color: app.graphLinkHighlight(b)?.withValues(alpha: 0.14) ??
                       onoteColorFromHex(b.content['bg'] as String?) ??
+                      (b.isDiagramCard ? Theme.of(context).colorScheme.surface : null) ??
                       // **Hover does not fill.** The owner: *"Hovering over a box
                       // makes its background solid, this makes aligning with other
                       // objects more difficult and is different to how it will be
@@ -876,7 +897,9 @@ class _BlockViewState extends State<BlockView> {
                                 ? (dark
                                     ? OnoteColors.night300
                                     : OnoteColors.paper300)
-                                : Colors.transparent,
+                                : (b.isDiagramCard
+                                    ? Theme.of(context).colorScheme.outlineVariant
+                                    : Colors.transparent),
                   ),
                 )
               // OneNote-style: no visible box at all until the first
@@ -1007,6 +1030,7 @@ class _BlockViewState extends State<BlockView> {
                       supportedDevices: devices,
                       onPanUpdate: _resize,
                       onPanEnd: (_) => _resizeUndoPushed = false,
+                      onPanCancel: () => _resizeUndoPushed = false,
                       child: Center(
                         child: Container(
                           width: 10,
@@ -1020,59 +1044,57 @@ class _BlockViewState extends State<BlockView> {
                     ),
                   ),
                 ),
-                // Bottom edge and corner (CANVAS-4). Only offered when the
-                // block has a real height to drive: an auto-height text box
-                // is sized by its content, and a handle that fought the text
-                // would be a control that appears not to work.
-                if (_canResizeHeight) ...[
-                  Positioned(
-                    left: _kChromePad,
-                    right: _kChromePad + 12,
-                    bottom: 0,
-                    height: _kChromePad + 6,
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeUpDown,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque, // whole strip, as above
-                        supportedDevices: devices,
-                        onPanUpdate: (d) =>
-                            _resizeBy(d, width: false, height: true),
-                        onPanEnd: (_) => _resizeUndoPushed = false,
-                        child: Center(
-                          child: Container(
-                            width: 28,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: primaryColor.withValues(alpha: .85),
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    right: 1,
-                    bottom: 1,
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeDownRight,
-                      child: GestureDetector(
-                        supportedDevices: devices,
-                        onPanUpdate: (d) =>
-                            _resizeBy(d, width: true, height: true),
-                        onPanEnd: (_) => _resizeUndoPushed = false,
+                // Dragging the bottom edge fixes the height at the new size.
+                Positioned(
+                  left: _kChromePad,
+                  right: _kChromePad + 12,
+                  bottom: 0,
+                  height: _kChromePad + 6,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.resizeUpDown,
+                    child: GestureDetector(
+                      key: ValueKey('resize-height-${b.id}'),
+                      behavior: HitTestBehavior.opaque, // whole strip, as above
+                      supportedDevices: devices,
+                      onPanUpdate: (d) =>
+                          _resizeBy(d, width: false, height: true),
+                      onPanEnd: (_) => _resizeUndoPushed = false,
+                      onPanCancel: () => _resizeUndoPushed = false,
+                      child: Center(
                         child: Container(
-                          width: 14,
-                          height: 14,
+                          width: 28,
+                          height: 10,
                           decoration: BoxDecoration(
-                            color: primaryColor,
-                            borderRadius: BorderRadius.circular(3),
+                            color: primaryColor.withValues(alpha: .85),
+                            borderRadius: BorderRadius.circular(5),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ],
+                ),
+                Positioned(
+                  right: 1,
+                  bottom: 1,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.resizeDownRight,
+                    child: GestureDetector(
+                      supportedDevices: devices,
+                      onPanUpdate: (d) =>
+                          _resizeBy(d, width: true, height: true),
+                      onPanEnd: (_) => _resizeUndoPushed = false,
+                      onPanCancel: () => _resizeUndoPushed = false,
+                      child: Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: primaryColor,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ],
           ),

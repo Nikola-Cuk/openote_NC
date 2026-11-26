@@ -473,7 +473,7 @@ void main() {
       app.cancelPendingSave();
     });
 
-    testWidgets('diagram card opens a separate editable page', (tester) async {
+    testWidgets('diagram card edits inline and only creates a canvas on request', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
       final host = app.pageId;
@@ -483,8 +483,12 @@ void main() {
 
       final card = app.blocks.single;
       expect(card.isDiagramCard, isTrue);
-      final ref = card.content['ref'] as Map;
-      final page = app.node(ref['pageId'] as String);
+      expect(card.type, BlockType.text);
+      expect(app.editingBlockId, card.id);
+      expect(card.diagramCanvasPageId, isNull);
+
+      app.attachDiagramCanvas(card.id);
+      final page = app.node(card.diagramCanvasPageId!);
       expect(page?.title, 'Card canvas 1');
       expect(page?.id, isNot(host));
       expect(app.pageId, host);

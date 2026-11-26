@@ -306,7 +306,8 @@ class _TextBlockViewState extends State<TextBlockView> {
       _closeSession();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        if (_engine.deserialize(widget.block.content).trim().isEmpty) {
+        if (!widget.block.isDiagramCard &&
+            _engine.deserialize(widget.block.content).trim().isEmpty) {
           widget.app.removeBlock(widget.block.id, recordUndo: false);
         }
       });
@@ -457,6 +458,9 @@ class _TextBlockViewState extends State<TextBlockView> {
       return session.build(context, surface);
     }
 
-    return _engine.buildReadOnly(context, surface);
+    final rendered = _engine.buildReadOnly(context, surface);
+    return widget.block.h == null
+        ? rendered
+        : SingleChildScrollView(primary: false, child: rendered);
   }
 }

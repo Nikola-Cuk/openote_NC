@@ -34,11 +34,13 @@ void main() {
     Block card(double x) => Block(
         type: BlockType.embed, x: x, y: 200, w: 320, h: 200,
         content: {Block.diagramCardKey: true});
-    final a = card(100), b = card(500);
+    final a = card(100), b = _text('ordinary object', x: 500);
     final app = _app()..blocks = [a, b];
     final edge = DiagramConnection(
       from: a.id,
       to: b.id,
+      fromSide: DiagramSide.right,
+      toSide: DiagramSide.left,
       label: 'Depends on',
       icon: '★',
       route: DiagramRoute.wavy,

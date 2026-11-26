@@ -202,11 +202,15 @@ enum DiagramRoute { straight, curved, wavy, elbow }
 
 enum DiagramStroke { solid, dashed, dotted, doubleLine }
 
+enum DiagramSide { top, right, bottom, left }
+
 class DiagramConnection {
   DiagramConnection({
     String? id,
     required this.from,
     required this.to,
+    this.fromSide,
+    this.toSide,
     this.label = '',
     this.icon = '',
     this.route = DiagramRoute.straight,
@@ -216,6 +220,8 @@ class DiagramConnection {
   final String id;
   final String from;
   final String to;
+  final DiagramSide? fromSide;
+  final DiagramSide? toSide;
   final String label;
   final String icon;
   final DiagramRoute route;
@@ -225,14 +231,16 @@ class DiagramConnection {
     final start = ids[from], end = ids[to];
     if (start == null || end == null) return null;
     return DiagramConnection(
-        from: start, to: end, label: label, icon: icon,
-        route: route, stroke: stroke);
+        from: start, to: end, fromSide: fromSide, toSide: toSide,
+        label: label, icon: icon, route: route, stroke: stroke);
   }
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'from': from,
         'to': to,
+        if (fromSide != null) 'fromSide': fromSide!.name,
+        if (toSide != null) 'toSide': toSide!.name,
         if (label.isNotEmpty) 'label': label,
         if (icon.isNotEmpty) 'icon': icon,
         'route': route.name,
@@ -250,6 +258,8 @@ class DiagramConnection {
       id: id,
       from: from,
       to: to,
+      fromSide: DiagramSide.values.where((v) => v.name == data['fromSide']).firstOrNull,
+      toSide: DiagramSide.values.where((v) => v.name == data['toSide']).firstOrNull,
       label: label is String ? label : '',
       icon: icon is String ? icon : '',
       route: DiagramRoute.values.where((v) => v.name == data['route'])
@@ -504,8 +514,20 @@ class Block {
 
   static const diagramCardKey = 'openoteNC.diagramCard';
 
+  static const diagramCanvasKey = 'openoteNC.diagramCanvas';
+
   bool get isDiagramCard =>
-      type == BlockType.embed && content[diagramCardKey] == true;
+      (type == BlockType.embed || type == BlockType.text) &&
+      content[diagramCardKey] == true;
+
+  String? get diagramCanvasPageId {
+    if (!isDiagramCard) return null;
+    final ref = content['ref'];
+    final id = type == BlockType.embed && ref is Map
+        ? ref['pageId']
+        : content[diagramCanvasKey];
+    return id is String && id.isNotEmpty ? id : null;
+  }
 
   static const textLockKey = 'openoteNC.readOnly';
 

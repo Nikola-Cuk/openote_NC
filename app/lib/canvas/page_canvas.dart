@@ -1826,6 +1826,13 @@ class _PageCanvasState extends State<PageCanvas> {
                             app: app,
                             controller: controller,
                           ),
+                        if (!app.inkToolInHand)
+                          Positioned.fill(child: DiagramAnchors(
+                            key: ValueKey(app.pageId),
+                            app: app,
+                            visible: visible,
+                            scale: controller.scale,
+                          )),
                         // **Handwriting on top, and this layer is last
                         // for that reason alone.**
                         //

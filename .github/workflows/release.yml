@@ -11,7 +11,7 @@ name: Release
 on:
   push:
     tags: ['v*']
-    branches: ['codex/text-block-locking', 'codex/canvas-workspace']
+    branches: ['codex/text-block-locking', 'codex/canvas-workspace', 'codex/canvas-inline']
   # A dry run: build and package everything, upload the artifacts, and create
   # NO release. Added because the platform jobs went un-run for their whole
   # existence — the only way to exercise them was to cut a real tag, and a tag
@@ -127,7 +127,7 @@ jobs:
           # fetch in lib/media/video_engine.dart. The next step packages them.
           dart run tool/split_video_engine.dart
           $defines = @()
-          if ($env:GITHUB_REF_NAME -in @('codex/text-block-locking', 'codex/canvas-workspace')) {
+          if ($env:GITHUB_REF_NAME -in @('codex/text-block-locking', 'codex/canvas-workspace', 'codex/canvas-inline')) {
             $defines += '--dart-define=OPENOTE_CUSTOM_BUILD=true'
           }
           flutter build windows --release --build-name=$env:VERSION @defines
@@ -306,7 +306,7 @@ jobs:
       # (app/lib/update/app_update.dart, and video_engine_test.dart pins it).
 
   linux:
-    if: github.ref_name != 'codex/text-block-locking' && github.ref_name != 'codex/canvas-workspace'
+    if: github.ref_name != 'codex/text-block-locking' && github.ref_name != 'codex/canvas-workspace' && github.ref_name != 'codex/canvas-inline'
     name: linux x64
     needs: version
     # Inside a container the runner's default shell resolves to plain sh
@@ -584,7 +584,7 @@ jobs:
           if-no-files-found: error
 
   macos:
-    if: github.ref_name != 'codex/text-block-locking' && github.ref_name != 'codex/canvas-workspace'
+    if: github.ref_name != 'codex/text-block-locking' && github.ref_name != 'codex/canvas-workspace' && github.ref_name != 'codex/canvas-inline'
     name: macos universal
     needs: version
     runs-on: macos-latest
