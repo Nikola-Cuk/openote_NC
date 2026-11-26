@@ -487,12 +487,18 @@ class _MathBarState extends State<MathBar> {
     // right padding 3 + border 1 + left pad 6 + text + arrow 11 + pad 1 +
     // border 1.
     const chrome = 23.0;
+    var style = DefaultTextStyle.of(context).style.merge(OnoteType.small);
+    if (MediaQuery.boldTextOf(context)) {
+      style = style.merge(const TextStyle(fontWeight: FontWeight.bold));
+    }
     final tp = TextPainter(
-      text: TextSpan(text: label, style: OnoteType.small),
-      textDirection: TextDirection.ltr,
+      text: TextSpan(text: label, style: style),
+      textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
     )..layout();
-    return tp.width + chrome;
+    final width = tp.width.ceilToDouble() + chrome;
+    tp.dispose();
+    return width;
   }
 
   /// **The doors, and a fold for whatever will not fit.**
@@ -561,26 +567,29 @@ class _MathBarState extends State<MathBar> {
           if (mounted && _open == was) _close();
         });
       }
-      return Row(mainAxisSize: MainAxisSize.min, children: [
-        for (final door in kMathDoors.take(shown))
-          _DoorButton(
-            key: _keyFor(door.label),
-            label: door.label,
-            tooltip: door.tip,
-            open: _open == door.label,
-            surfaces: s,
-            onTap: () => _toggle(door.label),
-          ),
-        if (folded.isNotEmpty)
-          _DoorButton(
-            key: _keyFor(kMathFoldLabel),
-            label: kMathFoldLabel,
-            tooltip: folded.map((d) => d.label).join(', '),
-            open: _open == kMathFoldLabel,
-            surfaces: s,
-            onTap: () => _toggle(kMathFoldLabel),
-          ),
-      ]);
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          for (final door in kMathDoors.take(shown))
+            _DoorButton(
+              key: _keyFor(door.label),
+              label: door.label,
+              tooltip: door.tip,
+              open: _open == door.label,
+              surfaces: s,
+              onTap: () => _toggle(door.label),
+            ),
+          if (folded.isNotEmpty)
+            _DoorButton(
+              key: _keyFor(kMathFoldLabel),
+              label: kMathFoldLabel,
+              tooltip: folded.map((d) => d.label).join(', '),
+              open: _open == kMathFoldLabel,
+              surfaces: s,
+              onTap: () => _toggle(kMathFoldLabel),
+            ),
+        ]),
+      );
     });
   }
 

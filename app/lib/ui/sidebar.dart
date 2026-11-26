@@ -134,9 +134,15 @@ class _Reveal extends StatelessWidget {
 /// a Home pane (favourites + recents), a remembered per-section page so
 /// browsing never loses your place, and the rail.
 class Sidebar extends StatefulWidget {
-  const Sidebar({super.key, required this.app, this.top = false});
+  const Sidebar({
+    super.key,
+    required this.app,
+    this.top = false,
+    this.organizer = false,
+  });
   final AppState app;
   final bool top;
+  final bool organizer;
 
   @override
   State<Sidebar> createState() => _SidebarState();
@@ -190,7 +196,9 @@ class _SidebarState extends State<Sidebar> {
     final searching = _query.trim().isNotEmpty;
 
     if (widget.top) return _topNavigation(context);
-    if (app.navCollapsed) return _NavRail(app: app, dark: dark);
+    if (app.navCollapsed && !widget.organizer) {
+      return _NavRail(app: app, dark: dark);
+    }
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -207,8 +215,8 @@ class _SidebarState extends State<Sidebar> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _NotebookHeader(app: app),
-              _searchRow(context),
+              _NotebookHeader(app: app, showCollapse: !widget.organizer),
+              if (!widget.organizer) _searchRow(context),
               const Divider(height: 1),
               Expanded(
                 child: _NavPaneKeys(
@@ -299,6 +307,7 @@ class _SidebarState extends State<Sidebar> {
                         ),
                       ),
                       IconButton(
+                        key: const ValueKey('open-notebook-organizer'),
                         icon: const Icon(Icons.account_tree_outlined, size: 17),
                         tooltip: l.navShowSections,
                         onPressed: app.notebookId == null ? null : _openOrganizer,
@@ -345,13 +354,13 @@ class _SidebarState extends State<Sidebar> {
   void _openOrganizer() {
     showDialog<void>(
       context: context,
-      builder: (context) => Dialog(
-        child: SizedBox(
-          width: 460,
-          height: 520,
-          child: ListenableBuilder(
-            listenable: app,
-            builder: (context, _) => Column(
+      builder: (context) => ListenableBuilder(
+        listenable: app,
+        builder: (context, _) => Dialog(
+          child: SizedBox(
+            width: app.navPagesW + (app.navSectionsCollapsed ? 0 : app.navSectionsW) + 6,
+            height: 540,
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Align(
@@ -362,9 +371,13 @@ class _SidebarState extends State<Sidebar> {
                     icon: const Icon(Icons.close),
                   ),
                 ),
-                Expanded(child: _NavPaneKeys(app: app, child: _twoColumnBody(context))),
-                const Divider(height: 1),
-                _footer(context),
+                Expanded(
+                  child: Sidebar(
+                    key: const ValueKey('notebook-organizer'),
+                    app: app,
+                    organizer: true,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1475,8 +1488,9 @@ class _NavRail extends StatelessWidget {
 /// per-notebook actions — so there is a single place notebooks are dealt with,
 /// and switching still takes the same two clicks it did through the dropdown.
 class _NotebookHeader extends StatelessWidget {
-  const _NotebookHeader({required this.app});
+  const _NotebookHeader({required this.app, required this.showCollapse});
   final AppState app;
+  final bool showCollapse;
 
   @override
   Widget build(BuildContext context) {
@@ -1552,7 +1566,7 @@ class _NotebookHeader extends StatelessWidget {
                   visualDensity: VisualDensity.compact,
                   onPressed: app.toggleNavSectionsCollapsed,
                 ),
-                IconButton(
+                if (showCollapse) IconButton(
                   icon: const Icon(Icons.keyboard_double_arrow_left, size: 16),
                   tooltip: l.navCollapse,
                   visualDensity: VisualDensity.compact,

@@ -515,6 +515,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(app.selectedIds, contains(block.id));
 
+      await tester.tap(find.byKey(const ValueKey('open-notebook-organizer')));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Term 2'));
       await tester.pumpAndSettle();
       expect(app.pageId, chapter3.id, reason: 'Term 2 has no page to jump to');

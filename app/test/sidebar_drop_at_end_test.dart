@@ -19,7 +19,6 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/app_shell.dart';
-import 'package:openote/ui/sidebar.dart';
 
 import 'support/sqlite.dart';
 
@@ -78,6 +77,8 @@ void main() {
     ));
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('open-notebook-organizer')));
+    await tester.pumpAndSettle();
   }
 
   /// Titles of [kind] under [parent], in the order the navigator shows them.
@@ -93,7 +94,7 @@ void main() {
   /// Drag the row labelled [label] (inside the navigator) to [to].
   Future<void> dragTo(WidgetTester tester, String label, Offset to) async {
     final row = find.descendant(
-        of: find.byType(Sidebar), matching: find.text(label));
+        of: find.byKey(const ValueKey('notebook-organizer')), matching: find.text(label));
     expect(row, findsOneWidget, reason: label);
     final g = await tester.startGesture(tester.getCenter(row));
     // Past the touch slop in a couple of steps, the way a hand does it —
@@ -118,7 +119,7 @@ void main() {
 
     // Well below the last row, in the empty part of the pages column.
     final last = tester.getRect(
-        find.descendant(of: find.byType(Sidebar), matching: find.text('Page 2')));
+        find.descendant(of: find.byKey(const ValueKey('notebook-organizer')), matching: find.text('Page 2')));
     await dragTo(tester, 'Page 0', Offset(last.center.dx, last.bottom + 150));
 
     expect(order(NodeKind.page, sectionId, 'Page '),
@@ -136,7 +137,7 @@ void main() {
     expect(before.last, 'Later');
 
     final row = tester.getRect(
-        find.descendant(of: find.byType(Sidebar), matching: find.text('Later')));
+        find.descendant(of: find.byKey(const ValueKey('notebook-organizer')), matching: find.text('Later')));
     await dragTo(tester, before.first, Offset(row.center.dx, row.bottom + 150));
 
     expect(order(NodeKind.section, null, '').last, before.first,
@@ -151,7 +152,7 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await shell(tester);
     final onto = tester.getCenter(find.descendant(
-        of: find.byType(Sidebar), matching: find.text('Page 2')));
+        of: find.byKey(const ValueKey('notebook-organizer')), matching: find.text('Page 2')));
     await dragTo(tester, 'Page 0', onto);
 
     final moved = app.nodes.firstWhere((n) => n.title == 'Page 0');

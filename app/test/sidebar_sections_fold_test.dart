@@ -18,7 +18,6 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/app_shell.dart';
-import 'package:openote/ui/sidebar.dart';
 
 import 'support/sqlite.dart';
 
@@ -72,6 +71,8 @@ void main() {
     ));
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('open-notebook-organizer')));
+    await tester.pumpAndSettle();
   }
 
   /// Long enough for the 400ms workspace save `setSetting` arms. Left to
@@ -83,11 +84,16 @@ void main() {
   }
 
   double navWidth(WidgetTester tester) =>
-      tester.getSize(find.byType(Sidebar)).width;
+      tester.getSize(find.byKey(const ValueKey('notebook-organizer'))).width;
+
+  Finder organizerTooltip(String tip) => find.descendant(
+    of: find.byKey(const ValueKey('notebook-organizer')),
+    matching: find.byTooltip(tip),
+  );
 
   /// The "Home" row at the top of the sections column.
   final homeTile = find.descendant(
-      of: find.byType(Sidebar), matching: find.text('Home'));
+      of: find.byKey(const ValueKey('notebook-organizer')), matching: find.text('Home'));
 
   testWidgets('the sections column folds away, and the navigator narrows',
       (tester) async {
@@ -121,7 +127,7 @@ void main() {
     await shell(tester);
 
     Future<void> press(String tip) async {
-      final b = find.byTooltip(tip);
+      final b = organizerTooltip(tip);
       expect(b, findsOneWidget, reason: tip);
       await tester.tap(b);
       await settle(tester);
@@ -156,10 +162,10 @@ void main() {
     await shell(tester);
     app.openHome();
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Hide the section list'), findsOneWidget);
-    await tester.tap(find.byTooltip('Hide the section list'));
+    expect(organizerTooltip('Hide the section list'), findsOneWidget);
+    await tester.tap(organizerTooltip('Hide the section list'));
     await settle(tester);
-    expect(find.byTooltip('Show the section list'), findsOneWidget,
+    expect(organizerTooltip('Show the section list'), findsOneWidget,
         reason: 'still a way back, with the sections column gone AND the '
             'pages pane replaced');
   });
