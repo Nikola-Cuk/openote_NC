@@ -5,11 +5,11 @@ import '../state/app_state.dart';
 const authorProfileTitle = 'Author profile';
 
 Future<void> showAuthorProfile(BuildContext context, AppState app) async {
-  final profile = await showDialog<(String, bool)>(
+  final profile = await showDialog<String>(
     context: context,
     builder: (_) => _AuthorProfileDialog(app: app),
   );
-  if (profile != null) app.setAuthorProfile(profile.$1, showBadges: profile.$2);
+  if (profile != null) app.setAuthorProfile(profile);
 }
 
 class _AuthorProfileDialog extends StatefulWidget {
@@ -23,7 +23,6 @@ class _AuthorProfileDialog extends StatefulWidget {
 
 class _AuthorProfileDialogState extends State<_AuthorProfileDialog> {
   late final _name = TextEditingController(text: widget.app.authorFullName);
-  late bool _show = widget.app.showAuthorBadges;
 
   @override
   void dispose() {
@@ -46,12 +45,6 @@ class _AuthorProfileDialogState extends State<_AuthorProfileDialog> {
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(labelText: 'First and last name'),
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Show initials on the canvas'),
-            value: _show,
-            onChanged: (value) => setState(() => _show = value),
-          ),
         ],
       ),
     ),
@@ -61,7 +54,7 @@ class _AuthorProfileDialogState extends State<_AuthorProfileDialog> {
         child: Text(L.of(context).commonCancel),
       ),
       FilledButton(
-        onPressed: () => Navigator.of(context).pop((_name.text, _show)),
+        onPressed: () => Navigator.of(context).pop(_name.text),
         child: const Text('Save'),
       ),
     ],

@@ -86,7 +86,77 @@ Path diagramPath(Rect from, Rect to, DiagramRoute route,
   return path;
 }
 
-typedef _DiagramLink = (DiagramConnection, Path, Offset, Offset);
+typedef _DiagramLink = ({
+  DiagramConnection edge,
+  Path path,
+  ui.PathMetric metric,
+  Rect badge,
+  Path? hull,
+});
+
+const _badgeText = TextStyle(fontSize: 11);
+const _badgePadding = EdgeInsets.symmetric(horizontal: 9, vertical: 5);
+const _badgeTextWidth = 172.0;
+
+String _connectorLabel(DiagramConnection edge) => [
+      if (edge.icon.isNotEmpty) edge.icon,
+      if (edge.label.isNotEmpty) edge.label,
+    ].join(' ');
+
+Size _measureBadge(BuildContext context, DiagramConnection edge, bool showAuthor) {
+  final text = _connectorLabel(edge);
+  final authorWidth = showAuthor && edge.attribution.latest != null ? 15.0 : 0.0;
+  if (text.isEmpty) {
+    return Size(13 + _badgePadding.horizontal + authorWidth,
+        math.max(13.0, authorWidth) + _badgePadding.vertical);
+  }
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: DefaultTextStyle.of(context).style.merge(_badgeText)),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 2,
+    ellipsis: '…',
+  )..layout(maxWidth: _badgeTextWidth);
+  final size = Size(painter.width.ceilToDouble() + _badgePadding.horizontal + authorWidth,
+      math.max(painter.height.ceilToDouble(), authorWidth) + _badgePadding.vertical);
+  painter.dispose();
+  return size;
+}
+
+Path _modernHull(ui.PathMetric metric, Rect badge,
+    {required double lineWidth, required bool wholeLine}) {
+  final middle = metric.length / 2;
+  final tangent = metric.getTangentForOffset(middle)!;
+  final direction = tangent.vector;
+  final along = direction.dx.abs() * badge.width / 2 +
+      direction.dy.abs() * badge.height / 2;
+  final across = direction.dy.abs() * badge.width / 2 +
+      direction.dx.abs() * badge.height / 2;
+  final spread = math.min(middle, along + 24);
+  final plateau = math.min(spread * .68, along * .54);
+  final half = lineWidth / 2;
+  final lifted = math.max(half, math.max(badge.height * .45, across * .78));
+  final begin = wholeLine ? 0.0 : middle - spread;
+  final end = wholeLine ? metric.length : middle + spread;
+  final count = ((end - begin) / 2).ceil().clamp(2, 2600);
+  final near = <Offset>[], far = <Offset>[];
+  for (var i = 0; i <= count; i++) {
+    final distance = begin + (end - begin) * i / count;
+    final point = metric.getTangentForOffset(distance);
+    if (point == null) continue;
+    final taper = ((spread - (middle - distance).abs()) /
+        math.max(1.0, spread - plateau)).clamp(0.0, 1.0);
+    final eased = taper * taper * (3 - 2 * taper);
+    final normal = Offset(-point.vector.dy, point.vector.dx);
+    final width = normal * (half + (lifted - half) * eased);
+    near.add(point.position + width);
+    far.add(point.position - width);
+  }
+  final ribbon = Path()..addPolygon([...near, ...far.reversed], true);
+  final label = Path()..addRRect(RRect.fromRectAndRadius(
+      badge, Radius.circular(badge.height / 2)));
+  return Path.combine(PathOperation.union, ribbon, label);
+}
 
 class DiagramLinks extends StatefulWidget {
   const DiagramLinks({super.key, required this.app, required this.visible});
@@ -125,10 +195,18 @@ class _DiagramLinksState extends State<DiagramLinks>
       if (metric == null) continue;
       final middle = metric.getTangentForOffset(metric.length / 2);
       if (middle == null) continue;
-      links.add((edge, path, middle.position, middle.vector));
+      final size = _measureBadge(context, edge, app.showAuthorBadges);
+      final badge = Rect.fromCenter(center: middle.position,
+          width: size.width, height: size.height);
+      final flowing = edge.flow != DiagramFlow.none;
+      final hull = edge.effectiveLabelStyle == DiagramLabelStyle.modern
+          ? _modernHull(metric, badge, lineWidth: flowing ? 2.4 * edge.flowWidth : 2.4,
+              wholeLine: flowing)
+          : null;
+      links.add((edge: edge, path: path, metric: metric, badge: badge, hull: hull));
     }
-    final steady = links.where((link) => link.$1.flow == DiagramFlow.none).toList();
-    final flowing = links.where((link) => link.$1.flow != DiagramFlow.none).toList();
+    final steady = links.where((link) => link.edge.flow == DiagramFlow.none).toList();
+    final flowing = links.where((link) => link.edge.flow != DiagramFlow.none).toList();
     final animate = flowing.isNotEmpty && !MediaQuery.disableAnimationsOf(context);
     if (animate && !_phase.isAnimating) _phase.repeat();
     if (!animate && _phase.isAnimating) _phase.stop();
@@ -139,7 +217,7 @@ class _DiagramLinksState extends State<DiagramLinks>
         if (steady.isNotEmpty)
           Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(painter: _LinkPainter(steady, colors.primary)),
+              child: CustomPaint(painter: _LinkPainter(steady, colors.primary, colors.surface)),
             ),
           ),
         if (flowing.isNotEmpty)
@@ -154,23 +232,17 @@ class _DiagramLinksState extends State<DiagramLinks>
               ),
             ),
           ),
-        for (final (edge, _, labelAt, direction) in links)
-          Positioned(
-            left: labelAt.dx - 110,
-            top: labelAt.dy - 24,
-            width: 220,
-            height: 48,
-            child: Center(
-              child: IgnorePointer(
-                ignoring: app.inkToolInHand,
-                child: Listener(
-                  onPointerDown: (event) => app.claimedPointers.add(event.pointer),
-                  child: _ConnectorBadge(
-                    edge: edge,
-                    direction: direction,
-                    showAuthor: app.showAuthorBadges,
-                    onEdit: () => showDiagramConnection(context, app, edge: edge),
-                  ),
+        for (final link in links)
+          Positioned.fromRect(
+            rect: link.badge,
+            child: IgnorePointer(
+              ignoring: app.inkToolInHand,
+              child: Listener(
+                onPointerDown: (event) => app.claimedPointers.add(event.pointer),
+                child: _ConnectorBadge(
+                  edge: link.edge,
+                  showAuthor: app.showAuthorBadges,
+                  onEdit: () => showDiagramConnection(context, app, edge: link.edge),
                 ),
               ),
             ),
@@ -181,58 +253,41 @@ class _DiagramLinksState extends State<DiagramLinks>
 }
 
 class _ConnectorBadge extends StatelessWidget {
-  const _ConnectorBadge({required this.edge, required this.direction,
-    required this.showAuthor, required this.onEdit});
+  const _ConnectorBadge({required this.edge, required this.showAuthor,
+    required this.onEdit});
 
   final DiagramConnection edge;
-  final Offset direction;
   final bool showAuthor;
   final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final flowing = edge.flow != DiagramFlow.none;
-    final label = [
-      if (edge.icon.isNotEmpty) edge.icon,
-      if (edge.label.isNotEmpty) edge.label,
-    ].join(' ');
-    return CustomPaint(
-      painter: _BadgeHull(
-        direction: direction,
-        pipeWidth: flowing ? 2.4 * edge.flowWidth : 0,
-        fill: flowing ? _pipeFill(colors.primary, colors.surface) : colors.surface,
-        border: flowing ? _pipeBorder(colors.primary) : colors.outlineVariant,
-      ),
-      child: Material(
-        type: MaterialType.transparency,
-        shape: const StadiumBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 5),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              InkWell(
-                onTap: onEdit,
-                child: Tooltip(
-                  message: 'Edit connector',
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-                    child: label.isEmpty
-                        ? Icon(Icons.link, size: 13, color: colors.primary)
-                        : ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 172),
-                            child: Text(label, maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11)),
-                          ),
-                  ),
+    final plain = edge.effectiveLabelStyle == DiagramLabelStyle.plain;
+    final label = _connectorLabel(edge);
+    return Material(
+      color: plain ? colors.surface : Colors.transparent,
+      shape: StadiumBorder(side: plain
+          ? BorderSide(color: colors.outlineVariant) : BorderSide.none),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onEdit,
+        child: Tooltip(
+          message: 'Edit connector',
+          child: Padding(
+            padding: _badgePadding,
+            child: Row(
+              children: [
+                Expanded(
+                  child: label.isEmpty
+                      ? Icon(Icons.link, size: 13, color: colors.primary)
+                      : Text(label, textAlign: TextAlign.center, maxLines: 2,
+                          overflow: TextOverflow.ellipsis, style: _badgeText),
                 ),
-              ),
-              if (showAuthor && edge.attribution.latest != null)
-                CanvasAuthorBadge(attribution: edge.attribution),
-            ],
+                if (showAuthor && edge.attribution.latest != null)
+                  CanvasAuthorBadge(attribution: edge.attribution),
+              ],
+            ),
           ),
         ),
       ),
@@ -245,57 +300,13 @@ Color _pipeFill(Color color, Color surface) =>
 
 Color _pipeBorder(Color color) => color.withValues(alpha: .48);
 
-class _BadgeHull extends CustomPainter {
-  const _BadgeHull({required this.direction, required this.pipeWidth,
-    required this.fill, required this.border});
-
-  final Offset direction;
-  final double pipeWidth;
-  final Color fill;
-  final Color border;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    var hull = Path()..addRRect(RRect.fromRectAndRadius(
-        rect, Radius.circular(size.height / 2)));
-    if (pipeWidth > 0) {
-      final center = rect.center;
-      final normal = Offset(-direction.dy, direction.dx);
-      final rim = math.min(
-        direction.dx == 0 ? double.infinity : size.width / 2 / direction.dx.abs(),
-        direction.dy == 0 ? double.infinity : size.height / 2 / direction.dy.abs(),
-      );
-      final tip = direction * (rim + 12);
-      final shoulder = direction * (rim * .56);
-      final narrow = normal * (pipeWidth / 2);
-      final wide = normal * math.min(size.height * .38, rim * .69);
-      final a = center - tip + narrow, b = center + tip + narrow;
-      final c = center + tip - narrow, d = center - tip - narrow;
-      final ab = center + wide, cd = center - wide;
-      final join = Path()
-        ..moveTo(a.dx, a.dy)
-        ..quadraticBezierTo((center - shoulder + narrow).dx,
-            (center - shoulder + narrow).dy, ab.dx, ab.dy)
-        ..quadraticBezierTo((center + shoulder + narrow).dx,
-            (center + shoulder + narrow).dy, b.dx, b.dy)
-        ..lineTo(c.dx, c.dy)
-        ..quadraticBezierTo((center + shoulder - narrow).dx,
-            (center + shoulder - narrow).dy, cd.dx, cd.dy)
-        ..quadraticBezierTo((center - shoulder - narrow).dx,
-            (center - shoulder - narrow).dy, d.dx, d.dy)
-        ..close();
-      hull = Path.combine(PathOperation.union, hull, join);
-    }
-    canvas
-      ..drawPath(hull, Paint()..color = fill)
-      ..drawPath(hull, Paint()..color = border..style = PaintingStyle.stroke);
-  }
-
-  @override
-  bool shouldRepaint(covariant _BadgeHull old) =>
-      old.direction != direction || old.pipeWidth != pipeWidth ||
-      old.fill != fill || old.border != border;
+void _drawHull(Canvas canvas, Path hull, Color color, Color surface) {
+  canvas.drawPath(hull, Paint()..color = _pipeFill(color, surface));
+  canvas.drawPath(hull, Paint()
+    ..color = _pipeBorder(color)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.2
+    ..strokeJoin = StrokeJoin.round);
 }
 
 class DiagramAnchors extends StatefulWidget {
@@ -484,10 +495,11 @@ class _AnchorPreview extends CustomPainter {
 }
 
 class _LinkPainter extends CustomPainter {
-  _LinkPainter(this.links, this.color);
+  _LinkPainter(this.links, this.color, this.surface);
 
   final List<_DiagramLink> links;
   final Color color;
+  final Color surface;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -496,10 +508,12 @@ class _LinkPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round;
-    for (final (edge, path, _, _) in links) {
+    for (final link in links) {
+      final edge = link.edge, path = link.path;
       paint.strokeWidth = edge.stroke == DiagramStroke.doubleLine ? 1.6 : 2.4;
       if (edge.stroke == DiagramStroke.solid) {
         canvas.drawPath(path, paint);
+        if (link.hull case final hull?) _drawHull(canvas, hull, color, surface);
         continue;
       }
       for (final metric in path.computeMetrics()) {
@@ -530,6 +544,7 @@ class _LinkPainter extends CustomPainter {
           }
         }
       }
+      if (link.hull case final hull?) _drawHull(canvas, hull, color, surface);
     }
   }
 
@@ -538,14 +553,10 @@ class _LinkPainter extends CustomPainter {
 }
 
 class _FlowPainter extends CustomPainter {
-  _FlowPainter(List<_DiagramLink> links, this.color, this.surface, this.phase)
-      : lines = [
-          for (final (edge, path, _, _) in links)
-            (edge, path, path.computeMetrics().toList()),
-        ],
-        super(repaint: phase);
+  _FlowPainter(this.links, this.color, this.surface, this.phase)
+      : super(repaint: phase);
 
-  final List<(DiagramConnection, Path, List<ui.PathMetric>)> lines;
+  final List<_DiagramLink> links;
   final Color color;
   final Color surface;
   final Animation<double>? phase;
@@ -568,39 +579,43 @@ class _FlowPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     const gap = 14.0;
     final travel = ((phase?.value ?? .5) % 1) * gap;
-    for (final (edge, path, metrics) in lines) {
+    for (final link in links) {
+      final edge = link.edge, metric = link.metric;
       final width = 2.4 * edge.flowWidth;
-      outline.strokeWidth = width + 1.5;
-      pipe.strokeWidth = width;
-      arrow.strokeWidth = width * .18;
-      canvas.drawPath(path, outline);
-      canvas.drawPath(path, pipe);
+      if (link.hull case final hull?) {
+        _drawHull(canvas, hull, color, surface);
+      } else {
+        outline.strokeWidth = width + 1.5;
+        pipe.strokeWidth = width;
+        canvas.drawPath(link.path, outline);
+        canvas.drawPath(link.path, pipe);
+      }
+      final length = metric.length;
+      if (length < 7) continue;
       final forward = edge.flow == DiagramFlow.forward;
-      for (final metric in metrics) {
-        final length = metric.length;
-        if (length < 7) continue;
-        final fade = math.min(22.0, length / 2);
-        for (var progressed = travel; progressed < length; progressed += gap) {
-          final tangent = metric.getTangentForOffset(
-              forward ? progressed : length - progressed);
-          if (tangent == null) continue;
-          final direction = forward ? tangent.vector : -tangent.vector;
-          final normal = Offset(-direction.dy, direction.dx);
-          final middle = tangent.position;
-          final tip = middle + direction * (width * .37);
-          final tail = middle - direction * (width * .34);
-          final rise = normal * (width * .27);
-          final start = tail + rise, end = tail - rise;
-          final opacity = math.min(progressed, length - progressed) / fade;
-          final fadeInOut = opacity.clamp(0.0, 1.0);
-          arrow.color = color.withValues(
-              alpha: .95 * fadeInOut * fadeInOut * (3 - 2 * fadeInOut));
-          canvas.drawPath(
-            Path()..moveTo(start.dx, start.dy)
-              ..lineTo(tip.dx, tip.dy)..lineTo(end.dx, end.dy),
-            arrow,
-          );
-        }
+      final fade = math.min(22.0, length / 2);
+      final covered = link.badge.inflate(width * .4);
+      arrow.strokeWidth = width * .18;
+      for (var progressed = travel; progressed < length; progressed += gap) {
+        final tangent = metric.getTangentForOffset(
+            forward ? progressed : length - progressed);
+        if (tangent == null || covered.contains(tangent.position)) continue;
+        final direction = forward ? tangent.vector : -tangent.vector;
+        final normal = Offset(-direction.dy, direction.dx);
+        final middle = tangent.position;
+        final tip = middle + direction * (width * .37);
+        final tail = middle - direction * (width * .34);
+        final rise = normal * (width * .27);
+        final start = tail + rise, end = tail - rise;
+        final opacity = math.min(progressed, length - progressed) / fade;
+        final fadeInOut = opacity.clamp(0.0, 1.0);
+        arrow.color = color.withValues(
+            alpha: .95 * fadeInOut * fadeInOut * (3 - 2 * fadeInOut));
+        canvas.drawPath(
+          Path()..moveTo(start.dx, start.dy)
+            ..lineTo(tip.dx, tip.dy)..lineTo(end.dx, end.dy),
+          arrow,
+        );
       }
     }
   }
@@ -673,6 +688,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
   late DiagramStroke _stroke = widget.initial?.stroke ?? DiagramStroke.solid;
   late DiagramFlow _flow = widget.initial?.flow ?? DiagramFlow.none;
   late int _flowWidth = widget.initial?.flowWidth ?? 3;
+  late DiagramLabelStyle? _labelStyle = widget.initial?.labelStyle;
 
   @override
   void dispose() {
@@ -702,77 +718,109 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       };
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) {
+    final labelStyle = _labelStyle ??
+        (_flow == DiagramFlow.none ? DiagramLabelStyle.plain : DiagramLabelStyle.modern);
+    final target = DropdownButtonFormField<String>(
+      initialValue: _target,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Connect to'),
+      items: [
+        for (final item in widget.targets.entries)
+          DropdownMenuItem(value: item.key,
+              child: Text(item.value, overflow: TextOverflow.ellipsis)),
+      ],
+      onChanged: (value) => setState(() => _target = value ?? _target),
+    );
+    final text = TextField(
+      controller: _label,
+      maxLength: 80,
+      decoration: const InputDecoration(labelText: 'Text on line'),
+    );
+    final icon = TextField(
+      controller: _icon,
+      maxLength: 8,
+      decoration: const InputDecoration(labelText: 'Icon or emoji', hintText: '★, →, ✓'),
+    );
+    final route = DropdownButtonFormField<DiagramRoute>(
+      initialValue: _route,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Path'),
+      items: [
+        for (final value in DiagramRoute.values)
+          DropdownMenuItem(value: value, child: Text(_routeLabel(value))),
+      ],
+      onChanged: (value) => setState(() => _route = value ?? _route),
+    );
+    final design = DropdownButtonFormField<DiagramLabelStyle>(
+      key: ValueKey(labelStyle),
+      initialValue: labelStyle,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Label style'),
+      items: const [
+        DropdownMenuItem(value: DiagramLabelStyle.plain, child: Text('Plain')),
+        DropdownMenuItem(value: DiagramLabelStyle.modern, child: Text('Modern')),
+      ],
+      onChanged: (value) => setState(() => _labelStyle = value),
+    );
+    final animate = DropdownButtonFormField<DiagramFlow>(
+      initialValue: _flow,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: 'Arrow flow'),
+      items: [
+        for (final value in DiagramFlow.values)
+          DropdownMenuItem(value: value, child: Text(_flowLabel(value))),
+      ],
+      onChanged: (value) => setState(() => _flow = value ?? _flow),
+    );
+    final stroke = _flow == DiagramFlow.none
+        ? DropdownButtonFormField<DiagramStroke>(
+            initialValue: _stroke,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Line style'),
+            items: [
+              for (final value in DiagramStroke.values)
+                DropdownMenuItem(value: value, child: Text(_strokeLabel(value))),
+            ],
+            onChanged: (value) => setState(() => _stroke = value ?? _stroke),
+          )
+        : DropdownButtonFormField<int>(
+            initialValue: _flowWidth,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Flow width'),
+            items: const [
+              DropdownMenuItem(value: 2, child: Text('2×')),
+              DropdownMenuItem(value: 3, child: Text('3×')),
+            ],
+            onChanged: (value) => setState(() => _flowWidth = value ?? _flowWidth),
+          );
+    final compact = MediaQuery.sizeOf(context).width < 500;
+    Widget pair(Widget first, Widget second, {int firstFlex = 1}) =>
+        compact
+            ? Column(children: [first, const SizedBox(height: 10), second])
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: firstFlex, child: first),
+                  const SizedBox(width: 18),
+                  Expanded(child: second),
+                ],
+              );
+    return AlertDialog(
         title: Text(widget.existing ? 'Edit connector' : 'Connect objects'),
         scrollable: true,
         content: SizedBox(
-          width: 360,
+          width: 560,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                initialValue: _target,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Connect to'),
-                items: [
-                  for (final target in widget.targets.entries)
-                    DropdownMenuItem(
-                      value: target.key,
-                      child: Text(target.value, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-                onChanged: (value) => setState(() => _target = value ?? _target),
-              ),
-              TextField(
-                controller: _label,
-                maxLength: 80,
-                decoration: const InputDecoration(labelText: 'Text on line'),
-              ),
-              TextField(
-                controller: _icon,
-                maxLength: 8,
-                decoration: const InputDecoration(
-                    labelText: 'Icon or emoji', hintText: '★, →, ✓'),
-              ),
-              DropdownButtonFormField<DiagramRoute>(
-                initialValue: _route,
-                decoration: const InputDecoration(labelText: 'Path'),
-                items: [
-                  for (final route in DiagramRoute.values)
-                    DropdownMenuItem(value: route, child: Text(_routeLabel(route))),
-                ],
-                onChanged: (value) => setState(() => _route = value ?? _route),
-              ),
-              DropdownButtonFormField<DiagramFlow>(
-                initialValue: _flow,
-                decoration: const InputDecoration(labelText: 'Arrow flow'),
-                items: [
-                  for (final flow in DiagramFlow.values)
-                    DropdownMenuItem(value: flow, child: Text(_flowLabel(flow))),
-                ],
-                onChanged: (value) => setState(() => _flow = value ?? _flow),
-              ),
-              if (_flow == DiagramFlow.none)
-                DropdownButtonFormField<DiagramStroke>(
-                  initialValue: _stroke,
-                  decoration: const InputDecoration(labelText: 'Line style'),
-                  items: [
-                    for (final stroke in DiagramStroke.values)
-                      DropdownMenuItem(value: stroke, child: Text(_strokeLabel(stroke))),
-                  ],
-                  onChanged: (value) => setState(() => _stroke = value ?? _stroke),
-                )
-              else
-                DropdownButtonFormField<int>(
-                  initialValue: _flowWidth,
-                  decoration: const InputDecoration(labelText: 'Flow width'),
-                  items: const [
-                    DropdownMenuItem(value: 2, child: Text('2×')),
-                    DropdownMenuItem(value: 3, child: Text('3×')),
-                  ],
-                  onChanged: (value) =>
-                      setState(() => _flowWidth = value ?? _flowWidth),
-                ),
+              target,
+              const SizedBox(height: 12),
+              pair(text, icon, firstFlex: 2),
+              const SizedBox(height: 10),
+              pair(route, design),
+              const SizedBox(height: 12),
+              pair(animate, stroke),
             ],
           ),
         ),
@@ -800,6 +848,7 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                 stroke: _stroke,
                 flow: _flow,
                 flowWidth: _flowWidth,
+                labelStyle: _labelStyle,
               ),
               false,
             )),
@@ -807,4 +856,5 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
           ),
         ],
       );
+  }
 }

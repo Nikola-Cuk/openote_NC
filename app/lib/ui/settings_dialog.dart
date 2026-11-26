@@ -8,6 +8,7 @@ import '../core/pen_buttons.dart';
 import '../l10n/l10n.dart';
 import '../l10n/labels.dart';
 import '../state/app_state.dart';
+import '../model/models.dart' show CanvasHeaderSize;
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import '../update/app_update.dart';
@@ -317,6 +318,16 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
   List<Widget> _page(_Group g, L l) => switch (g) {
         _Group.appearance => [
+            _row(
+              l.settingsCanvasHeaderSize,
+              _choice(CanvasHeaderSize.values, app.canvasHeaderSize,
+                  (size) => setState(() => app.setCanvasHeaderSize(size)),
+                  (size) => switch (size) {
+                    CanvasHeaderSize.minimal => l.settingsCanvasHeaderMinimal,
+                    CanvasHeaderSize.medium => l.settingsCanvasHeaderMedium,
+                    CanvasHeaderSize.large => l.settingsCanvasHeaderLarge,
+                  }),
+            ),
             _row(
               l.settingsTheme,
               SegmentedButton<ThemeMode>(

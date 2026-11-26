@@ -35,7 +35,8 @@ void main() {
       expect(repo.readPage(active.id, page).blocks.single.attribution.created?.initials, 'NC');
 
       app.setAuthorProfile('Ana Ilic', showBadges: true);
-      block.content['text'] = 'Cross notebook test token updated';
+      block.content['text'] = 'First occurrence of test token followed by '
+          'enough context to leave distinct snippets for the next occurrence of test token.';
       app.updateBlock(block);
       await app.flushSave();
       final authors = repo.readPage(active.id, page).blocks.single.attribution;
@@ -44,7 +45,13 @@ void main() {
       expect(authors.edited!.at, greaterThanOrEqualTo(authors.created!.at));
 
       await app.selectNotebook(other.id);
-      expect(app.searchNotebook(active, 'test token').single.nodeId, page);
+      final hits = app.searchNotebook(active, 'test token');
+      expect(hits, hasLength(2));
+      expect(hits.map((hit) => hit.nodeId), everyElement(page));
+      expect(hits.map((hit) => hit.breadcrumb),
+          everyElement('Active > Section 1 > Untitled page'));
+      expect(hits.first.subtitle, contains('First occurrence'));
+      expect(hits.last.subtitle, contains('next occurrence'));
       await app.selectNotebook(active.id);
       app.protectNode(page, '12345', UnlockPolicy.session);
       await app.selectNotebook(other.id);

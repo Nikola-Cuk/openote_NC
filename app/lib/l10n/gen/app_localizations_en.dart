@@ -361,6 +361,21 @@ class LEn extends L {
   String get insertDiagramCard => 'Diagram card';
 
   @override
+  String get barCanvasAuthors => 'Show initials on canvas';
+
+  @override
+  String get settingsCanvasHeaderSize => 'Object header height';
+
+  @override
+  String get settingsCanvasHeaderMinimal => 'Minimal';
+
+  @override
+  String get settingsCanvasHeaderMedium => 'Medium';
+
+  @override
+  String get settingsCanvasHeaderLarge => 'Large';
+
+  @override
   String get commonCancel => 'Cancel';
 
   @override

@@ -180,9 +180,8 @@ enum OpenNotebookOutcome {
 /// on screen is the failure mode this type exists to prevent.
 typedef NotebookSearchHit = ({
   String notebookId,
-  String notebookTitle,
   String nodeId,
-  String title,
+  String breadcrumb,
   NodeKind kind,
   int level,
   String subtitle,
@@ -413,11 +412,20 @@ class AppState extends ChangeNotifier
     final gate = ProtectionTree(tree, protected.contains);
     bool hidden(String id) =>
         active ? isLocked(id) : protected.isNotEmpty && gate.governing(id) != null;
+    String breadcrumb(TreeNode node) {
+      final parts = <String>[];
+      final visited = <String>{};
+      for (TreeNode? item = node; item != null && visited.add(item.id);
+          item = byId[item.parentId]) {
+        parts.add(item.title);
+      }
+      return [notebook.title, ...parts.reversed].join(' > ');
+    }
+
     NotebookSearchHit hit(TreeNode node, String subtitle, {bool content = false}) => (
       notebookId: notebook.id,
-      notebookTitle: notebook.title,
       nodeId: node.id,
-      title: node.title,
+      breadcrumb: breadcrumb(node),
       kind: node.kind,
       level: node.level,
       subtitle: subtitle,
@@ -427,17 +435,30 @@ class AppState extends ChangeNotifier
     final titles = tree.where((node) =>
         (node.kind == NodeKind.page || node.kind == NodeKind.section) &&
         node.title.toLowerCase().contains(q) && !hidden(node.id)).toList();
-    final titleIds = titles.map((node) => node.id).toSet();
     final matches = q.length < 3
         ? const <({String pageId, String snippet})>[]
-        : _repo.searchPageContent(notebook.id, q);
-    return [
-      for (final node in titles) hit(node, byId[node.parentId]?.title ?? ''),
-      for (final match in matches)
-        if (!titleIds.contains(match.pageId) && !hidden(match.pageId))
-          if (byId[match.pageId] case final node?)
-            hit(node, match.snippet, content: true),
-    ];
+        : _repo.searchPageContent(notebook.id, q, limit: null, allMatches: true);
+    final snippets = <String, List<String>>{};
+    for (final match in matches) {
+      if (!hidden(match.pageId)) {
+        snippets.putIfAbsent(match.pageId, () => []).add(match.snippet);
+      }
+    }
+    final hits = <NotebookSearchHit>[];
+    for (final node in titles) {
+      final content = snippets.remove(node.id);
+      if (content == null) {
+        hits.add(hit(node, ''));
+      } else {
+        hits.addAll(content.map((snippet) => hit(node, snippet, content: true)));
+      }
+    }
+    for (final entry in snippets.entries) {
+      final node = byId[entry.key];
+      if (node == null) continue;
+      hits.addAll(entry.value.map((snippet) => hit(node, snippet, content: true)));
+    }
+    return hits;
   }
 
   /// Re-read the tree from storage into [nodes], bumping [nodesRevision].
@@ -4746,6 +4767,7 @@ class AppState extends ChangeNotifier
 
   String authorFullName = '';
   bool showAuthorBadges = true;
+  CanvasHeaderSize canvasHeaderSize = CanvasHeaderSize.minimal;
 
   String get authorInitials => authorFullName.trim().split(RegExp(r'\s+'))
       .where((part) => part.isNotEmpty)
@@ -4753,13 +4775,28 @@ class AppState extends ChangeNotifier
       .map((part) => part.characters.first.toUpperCase())
       .join();
 
-  void setAuthorProfile(String name, {required bool showBadges}) {
+  void setAuthorProfile(String name, {bool? showBadges}) {
     final wasUnnamed = authorFullName.isEmpty;
     authorFullName = name.trim();
-    showAuthorBadges = showBadges;
     _repo.setSetting('canvasAuthorName', authorFullName);
-    _repo.setSetting('canvasAuthorBadges', showBadges);
+    if (showBadges != null) {
+      showAuthorBadges = showBadges;
+      _repo.setSetting('canvasAuthorBadges', showBadges);
+    }
     if (wasUnnamed || authorFullName.isEmpty) _resetAuthorBaseline();
+    notifyListeners();
+  }
+
+  void toggleAuthorBadges() {
+    showAuthorBadges = !showAuthorBadges;
+    _repo.setSetting('canvasAuthorBadges', showAuthorBadges);
+    notifyListeners();
+  }
+
+  void setCanvasHeaderSize(CanvasHeaderSize size) {
+    if (canvasHeaderSize == size) return;
+    canvasHeaderSize = size;
+    _repo.setSetting('canvasHeaderSize', size.name);
     notifyListeners();
   }
 
@@ -7825,6 +7862,8 @@ class AppState extends ChangeNotifier
     if (rec is List) _recents.addAll(rec.cast<String>());
     authorFullName = _repo.getSetting('canvasAuthorName') as String? ?? '';
     showAuthorBadges = _repo.getSetting('canvasAuthorBadges') != false;
+    canvasHeaderSize = CanvasHeaderSize.values.asNameMap()[
+        _repo.getSetting('canvasHeaderSize')] ?? CanvasHeaderSize.minimal;
     penSeenHere = _repo.getSetting('penSeenHere') == true;
     final pb = _repo.getSetting('penButton') as String?;
     if (pb != null) {

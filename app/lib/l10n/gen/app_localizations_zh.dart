@@ -354,6 +354,21 @@ class LZh extends L {
   String get insertDiagramCard => '图表卡片';
 
   @override
+  String get barCanvasAuthors => '在画布上显示姓名缩写';
+
+  @override
+  String get settingsCanvasHeaderSize => '对象标题栏高度';
+
+  @override
+  String get settingsCanvasHeaderMinimal => '最小';
+
+  @override
+  String get settingsCanvasHeaderMedium => '中等';
+
+  @override
+  String get settingsCanvasHeaderLarge => '较大';
+
+  @override
   String get commonCancel => '取消';
 
   @override

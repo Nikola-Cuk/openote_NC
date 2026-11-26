@@ -364,6 +364,21 @@ class LFr extends L {
   String get insertDiagramCard => 'Carte de diagramme';
 
   @override
+  String get barCanvasAuthors => 'Afficher les initiales sur le canevas';
+
+  @override
+  String get settingsCanvasHeaderSize => 'Hauteur de l’en-tête des objets';
+
+  @override
+  String get settingsCanvasHeaderMinimal => 'Minimale';
+
+  @override
+  String get settingsCanvasHeaderMedium => 'Moyenne';
+
+  @override
+  String get settingsCanvasHeaderLarge => 'Grande';
+
+  @override
   String get commonCancel => 'Annuler';
 
   @override

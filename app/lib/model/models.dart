@@ -235,6 +235,13 @@ class CanvasAttribution {
       : const CanvasAttribution();
 }
 
+enum CanvasHeaderSize {
+  minimal(16), medium(24), large(32);
+
+  const CanvasHeaderSize(this.height);
+  final double height;
+}
+
 enum DiagramRoute { straight, curved, wavy, elbow }
 
 enum DiagramStroke { solid, dashed, dotted, doubleLine }
@@ -242,6 +249,8 @@ enum DiagramStroke { solid, dashed, dotted, doubleLine }
 enum DiagramSide { top, right, bottom, left }
 
 enum DiagramFlow { none, forward, reverse }
+
+enum DiagramLabelStyle { plain, modern }
 
 class DiagramConnection {
   DiagramConnection({
@@ -256,6 +265,7 @@ class DiagramConnection {
     this.stroke = DiagramStroke.solid,
     this.flow = DiagramFlow.none,
     this.flowWidth = 3,
+    this.labelStyle,
     this.attribution = const CanvasAttribution(),
   }) : id = id ?? newId();
 
@@ -270,12 +280,17 @@ class DiagramConnection {
   final DiagramStroke stroke;
   final DiagramFlow flow;
   final int flowWidth;
+  final DiagramLabelStyle? labelStyle;
+
+  DiagramLabelStyle get effectiveLabelStyle => labelStyle ??
+      (flow == DiagramFlow.none ? DiagramLabelStyle.plain : DiagramLabelStyle.modern);
+
   final CanvasAttribution attribution;
 
   DiagramConnection withAttribution(CanvasAttribution author) => DiagramConnection(
         id: id, from: from, to: to, fromSide: fromSide, toSide: toSide,
         label: label, icon: icon, route: route, stroke: stroke,
-        flow: flow, flowWidth: flowWidth, attribution: author,
+        flow: flow, flowWidth: flowWidth, labelStyle: labelStyle, attribution: author,
       );
 
   DiagramConnection? remap(Map<String, String> ids) {
@@ -284,7 +299,7 @@ class DiagramConnection {
     return DiagramConnection(
         from: start, to: end, fromSide: fromSide, toSide: toSide,
         label: label, icon: icon, route: route, stroke: stroke,
-        flow: flow, flowWidth: flowWidth);
+        flow: flow, flowWidth: flowWidth, labelStyle: labelStyle);
   }
 
   Map<String, dynamic> toJson() => {
@@ -299,6 +314,7 @@ class DiagramConnection {
         'stroke': stroke.name,
         if (flow != DiagramFlow.none) 'flow': flow.name,
         if (flowWidth != 3) 'flowWidth': flowWidth,
+        if (labelStyle != null) 'labelStyle': labelStyle!.name,
         if (attribution.latest != null) blockAttributionKey: attribution.toJson(),
       };
 
@@ -324,6 +340,8 @@ class DiagramConnection {
       flow: DiagramFlow.values.where((v) => v.name == data['flow'])
               .firstOrNull ?? DiagramFlow.none,
       flowWidth: data['flowWidth'] == 2 ? 2 : 3,
+      labelStyle: DiagramLabelStyle.values.where(
+          (value) => value.name == data['labelStyle']).firstOrNull,
       attribution: CanvasAttribution.fromJson(data[blockAttributionKey]),
     );
   }

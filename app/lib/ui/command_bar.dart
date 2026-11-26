@@ -250,6 +250,7 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
         // guard test in `chrome_memo_test.dart` exists to stop, and it cannot
         // see through a child widget to find them.
         app.showPageOverview,
+        app.showAuthorBadges,
         app.activeMath,
         app.angleMode,
         // A `List` compares by identity; the ids themselves are what the
@@ -538,6 +539,20 @@ class _CommandBarState extends State<CommandBar> with MemoBuild<CommandBar> {
                                         l.barExportPageProgress(done, total)))),
                           ),
                         ],
+                      ),
+                      ToolbarControl(
+                        width: 36,
+                        icon: app.showAuthorBadges ? Icons.badge : Icons.badge_outlined,
+                        label: l.barCanvasAuthors,
+                        onPressed: app.toggleAuthorBadges,
+                        inline: IconButton(
+                          isSelected: app.showAuthorBadges,
+                          icon: const Icon(Icons.badge_outlined, size: 18),
+                          selectedIcon: Icon(Icons.badge, size: 18, color: scheme.primary),
+                          tooltip: l.barCanvasAuthors,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: app.toggleAuthorBadges,
+                        ),
                       ),
                       // The one place to LOOK for a setting (PLANNING
                       // "Consistency/UX": centralised settings page).

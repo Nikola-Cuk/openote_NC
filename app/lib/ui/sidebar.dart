@@ -323,53 +323,59 @@ class _SidebarState extends State<Sidebar> {
               style: TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
           );
         }
-        return ListView(
+        final hits = [...current, ...others];
+        return ListView.builder(
           padding: const EdgeInsets.symmetric(vertical: 4),
-          children: [
-            for (final h in current.where((h) => !h.content)) _matchTile(h),
-            if (current.any((h) => h.content)) ...[
-              _searchHeading(l.navInPageContent),
-              for (final h in current.where((h) => h.content)) _matchTile(h),
-            ],
-            for (final notebookId in others.map((h) => h.notebookId).toSet()) ...[
-              _searchHeading(others.firstWhere((h) => h.notebookId == notebookId).notebookTitle),
-              for (final hit in others.where((h) => h.notebookId == notebookId))
-                _matchTile(hit),
-            ],
-            if (loading)
-              const Padding(
-                padding: EdgeInsets.all(12),
-                child: LinearProgressIndicator(),
-              ),
-          ],
+          itemCount: hits.length + (loading ? 1 : 0),
+          itemBuilder: (context, index) => index < hits.length
+              ? _matchTile(hits[index], q)
+              : const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: LinearProgressIndicator(),
+                ),
         );
       },
     );
   }
 
-  Widget _searchHeading(String label) => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-    child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-        color: context.surfaces.textSecondary)),
-  );
-
-  Widget _matchTile(NotebookSearchHit hit) => ListTile(
-    dense: true,
-    visualDensity: VisualDensity.compact,
-    leading: Icon(hit.content
-        ? Icons.search
-        : hit.kind == NodeKind.section
-            ? Icons.folder_outlined
-            : hit.level == 0
-                ? Icons.description_outlined
-                : Icons.subdirectory_arrow_right, size: 16),
-    title: Text(hit.title, overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 13)),
-    subtitle: hit.subtitle.isEmpty ? null : Text(hit.subtitle,
-        maxLines: 2, overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 11)),
-    onTap: () => _openMatch(hit),
-  );
+  Widget _matchTile(NotebookSearchHit hit, String query) {
+    final snippet = hit.subtitle;
+    final start = snippet.toLowerCase().indexOf(query);
+    final end = (start + query.length).clamp(0, snippet.length);
+    final emphasis = TextStyle(
+      fontWeight: FontWeight.w700,
+      color: Theme.of(context).colorScheme.primary,
+    );
+    return ListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      leading: Icon(hit.content
+          ? Icons.search
+          : hit.kind == NodeKind.section
+              ? Icons.folder_outlined
+              : hit.level == 0
+                  ? Icons.description_outlined
+                  : Icons.subdirectory_arrow_right, size: 16),
+      title: Tooltip(
+        message: hit.breadcrumb,
+        child: Text(hit.breadcrumb, maxLines: 2, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13)),
+      ),
+      subtitle: snippet.isEmpty ? null : Text.rich(
+        TextSpan(children: start < 0 || start >= end
+            ? [TextSpan(text: snippet)]
+            : [
+                TextSpan(text: snippet.substring(0, start)),
+                TextSpan(text: snippet.substring(start, end), style: emphasis),
+                TextSpan(text: snippet.substring(end)),
+              ]),
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 11),
+      ),
+      onTap: () => _openMatch(hit),
+    );
+  }
 
   // ── Two columns: sections | pages (the OneNote shape) ──────────────────
   //

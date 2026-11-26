@@ -365,6 +365,21 @@ class LEs extends L {
   String get insertDiagramCard => 'Tarjeta de diagrama';
 
   @override
+  String get barCanvasAuthors => 'Mostrar iniciales en el lienzo';
+
+  @override
+  String get settingsCanvasHeaderSize => 'Altura de la cabecera del objeto';
+
+  @override
+  String get settingsCanvasHeaderMinimal => 'Mínima';
+
+  @override
+  String get settingsCanvasHeaderMedium => 'Mediana';
+
+  @override
+  String get settingsCanvasHeaderLarge => 'Grande';
+
+  @override
   String get commonCancel => 'Cancelar';
 
   @override

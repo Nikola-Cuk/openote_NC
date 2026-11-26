@@ -81,9 +81,11 @@ const double _kChromePad = 8;
 /// a drag moves the container. OneNote's model, and the reason for it is that
 /// a click-drag inside a text box means "select this text" to everyone who has
 /// ever used a text box.
-const double _kBarH = canvasObjectHeaderHeight;
 
 class _BlockViewState extends State<BlockView> {
+  double get _barHeight => app.canvasHeaderSize.height;
+  double get _barIconSize => 11 + (_barHeight - 16) * .38;
+  double get _authorBadgeSize => (_barHeight - 1).clamp(15.0, 24.0);
   bool _hoverBody = false;
   bool _hoverChrome = false;
   bool get _hover => _hoverBody || _hoverChrome;
@@ -263,7 +265,7 @@ class _BlockViewState extends State<BlockView> {
   /// Is [global] over the chrome ring rather than the block's content?
   ///
   /// The content sits inside the same padding the build method applies —
-  /// `fromLTRB(_kChromePad, _kBarH, _kChromePad, _kChromePad)` — so anything
+  /// `fromLTRB(_kChromePad, _barHeight, _kChromePad, _kChromePad)` — so anything
   /// outside that rectangle is the bar, a handle, or hit-padding. Derived from
   /// the geometry rather than tracked with a flag per control, so a chrome
   /// element added later is covered without anyone remembering to.
@@ -272,7 +274,7 @@ class _BlockViewState extends State<BlockView> {
     if (box == null || !box.hasSize) return false;
     final local = box.globalToLocal(global);
     final s = box.size;
-    return local.dy < _kBarH ||
+    return local.dy < _barHeight ||
         local.dx < _kChromePad ||
         local.dx > s.width - _kChromePad ||
         local.dy > s.height - _kChromePad;
@@ -563,7 +565,7 @@ class _BlockViewState extends State<BlockView> {
               children: [
                 const SizedBox(width: 6),
                 Icon(Icons.drag_indicator,
-                    size: 12,
+                    size: _barIconSize + 1,
                     color: live
                         ? Theme.of(context).colorScheme.onPrimary
                         : OnoteColors.graphite400),
@@ -576,7 +578,7 @@ class _BlockViewState extends State<BlockView> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (app.showAuthorBadges && b.attribution.latest != null)
-                            CanvasAuthorBadge(attribution: b.attribution),
+                            CanvasAuthorBadge(attribution: b.attribution, size: _authorBadgeSize),
                           if (b.type == BlockType.text && b.isDiagramCard)
                             _barButton(context,
                                 b.diagramCanvasPageId == null ? Icons.add : Icons.open_in_new,
@@ -627,7 +629,7 @@ class _BlockViewState extends State<BlockView> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 3),
             child: Icon(icon,
-                size: 11,
+                size: _barIconSize,
                 color: live
                     ? Theme.of(context).colorScheme.onPrimary
                     : OnoteColors.graphite400),
@@ -927,7 +929,7 @@ class _BlockViewState extends State<BlockView> {
       // (b.x, b.y) — renderSizes, marquee, culling and export all continue to
       // mean the content box.
       left: b.x - _kChromePad,
-      top: b.y - _kBarH,
+      top: b.y - _barHeight,
       child: IgnorePointer(
         ignoring: inkToolActive,
         // Raw pointer stream: claims the pointer so the canvas ignores it, and
@@ -943,8 +945,8 @@ class _BlockViewState extends State<BlockView> {
             clipBehavior: Clip.none,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(
-                    _kChromePad, _kBarH, _kChromePad, _kChromePad),
+                padding: EdgeInsets.fromLTRB(
+                    _kChromePad, _barHeight, _kChromePad, _kChromePad),
                 child: _MeasureSize(
                   onChange: (size) {
                     app.renderSizes[b.id] = size;
@@ -980,7 +982,7 @@ class _BlockViewState extends State<BlockView> {
                   left: 0,
                   right: 0,
                   top: 0,
-                  height: _kBarH,
+                  height: _barHeight,
                   child: showChrome
                       ? _moveBar(context, primaryColor, dark)
                       : MouseRegion(
@@ -1009,18 +1011,18 @@ class _BlockViewState extends State<BlockView> {
                 Positioned(
                   right: _kChromePad + (b.textLocked ? 28 : 3),
                   top: 0,
-                  child: CanvasAuthorBadge(attribution: b.attribution),
+                  child: CanvasAuthorBadge(attribution: b.attribution, size: _authorBadgeSize),
                 ),
               if (b.textLocked)
                 Positioned(
                   right: _kChromePad,
                   top: 0,
-                  height: _kBarH,
+                  height: _barHeight,
                   child: IconButton(
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(minWidth: 28),
                     tooltip: 'Text block locked. Click to unlock.',
-                    iconSize: 13,
+                    iconSize: _barIconSize + 2,
                     onPressed: () =>
                         app.setTextBlockLocked(b.id, locked: false),
                     icon: const Icon(Icons.lock_outline),
@@ -1033,7 +1035,7 @@ class _BlockViewState extends State<BlockView> {
               if (primary && !_locked && !_pendingEmpty) ...[
                 Positioned(
                   right: 0,
-                  top: _kBarH,
+                  top: _barHeight,
                   bottom: 0,
                   width: _kChromePad + 6,
                   child: MouseRegion(

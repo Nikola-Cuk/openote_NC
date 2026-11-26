@@ -689,6 +689,36 @@ abstract class L {
   /// **'Cancel'**
   String get commonCancel;
 
+  /// Toolbar toggle to show or hide initials on canvas objects.
+  ///
+  /// In en, this message translates to:
+  /// **'Show initials on canvas'**
+  String get barCanvasAuthors;
+
+  /// Appearance setting for the height of canvas object headers.
+  ///
+  /// In en, this message translates to:
+  /// **'Object header height'**
+  String get settingsCanvasHeaderSize;
+
+  /// Smallest canvas object header height.
+  ///
+  /// In en, this message translates to:
+  /// **'Minimal'**
+  String get settingsCanvasHeaderMinimal;
+
+  /// Medium canvas object header height.
+  ///
+  /// In en, this message translates to:
+  /// **'Medium'**
+  String get settingsCanvasHeaderMedium;
+
+  /// Largest canvas object header height.
+  ///
+  /// In en, this message translates to:
+  /// **'Large'**
+  String get settingsCanvasHeaderLarge;
+
   /// Settings label for the folder containing the local workspace.
   ///
   /// In en, this message translates to:

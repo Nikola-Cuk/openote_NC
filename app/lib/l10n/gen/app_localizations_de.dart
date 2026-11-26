@@ -364,6 +364,21 @@ class LDe extends L {
   String get insertDiagramCard => 'Diagrammkarte';
 
   @override
+  String get barCanvasAuthors => 'Initialen auf der Arbeitsfläche anzeigen';
+
+  @override
+  String get settingsCanvasHeaderSize => 'Höhe der Objekt-Kopfzeile';
+
+  @override
+  String get settingsCanvasHeaderMinimal => 'Minimal';
+
+  @override
+  String get settingsCanvasHeaderMedium => 'Mittel';
+
+  @override
+  String get settingsCanvasHeaderLarge => 'Groß';
+
+  @override
   String get commonCancel => 'Abbrechen';
 
   @override

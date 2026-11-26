@@ -498,6 +498,26 @@
   "@insertDiagramCard": {
     "description": "Insert tool for a card with its own canvas."
   },
+  "barCanvasAuthors": "Show initials on canvas",
+  "@barCanvasAuthors": {
+    "description": "Toolbar toggle to show or hide initials on canvas objects."
+  },
+  "settingsCanvasHeaderSize": "Object header height",
+  "@settingsCanvasHeaderSize": {
+    "description": "Appearance setting for the height of canvas object headers."
+  },
+  "settingsCanvasHeaderMinimal": "Minimal",
+  "@settingsCanvasHeaderMinimal": {
+    "description": "Smallest canvas object header height."
+  },
+  "settingsCanvasHeaderMedium": "Medium",
+  "@settingsCanvasHeaderMedium": {
+    "description": "Medium canvas object header height."
+  },
+  "settingsCanvasHeaderLarge": "Large",
+  "@settingsCanvasHeaderLarge": {
+    "description": "Largest canvas object header height."
+  },
   "commonCancel": "Cancel",
   "@commonCancel": {
     "description": "Button: dismiss a dialog without acting."

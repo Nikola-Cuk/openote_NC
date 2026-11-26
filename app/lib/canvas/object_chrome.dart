@@ -3,19 +3,18 @@ import 'package:flutter/material.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 
-const canvasObjectHeaderHeight = 16.0;
-
 Rect canvasObjectFrame(AppState app, Block block) {
   final body = app.blockRect(block);
   final width = block.type == BlockType.ink ? math.max(body.width, 48.0) : body.width;
-  return Rect.fromLTWH(body.left, body.top - canvasObjectHeaderHeight,
-      width, body.height + canvasObjectHeaderHeight);
+  final header = app.canvasHeaderSize.height;
+  return Rect.fromLTWH(body.left, body.top - header, width, body.height + header);
 }
 
 class CanvasAuthorBadge extends StatelessWidget {
-  const CanvasAuthorBadge({super.key, required this.attribution});
+  const CanvasAuthorBadge({super.key, required this.attribution, this.size = 15});
 
   final CanvasAttribution attribution;
+  final double size;
 
   static String _line(String verb, AuthorStamp stamp) {
     final time = DateTime.fromMillisecondsSinceEpoch(stamp.at);
@@ -57,12 +56,12 @@ class CanvasAuthorBadge extends StatelessWidget {
             ),
           ),
           child: SizedBox.square(
-            dimension: 15,
+            dimension: size,
             child: Center(
               child: Text(latest.initials,
                 maxLines: 1,
                 overflow: TextOverflow.clip,
-                style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w700,
+                style: TextStyle(fontSize: size * .5, fontWeight: FontWeight.w700,
                     color: colors.onPrimaryContainer)),
             ),
           ),
@@ -109,7 +108,7 @@ class InkObjectFrame extends StatelessWidget {
             Positioned(
               right: 3,
               top: 0,
-              height: canvasObjectHeaderHeight,
+              height: app.canvasHeaderSize.height,
               child: IgnorePointer(
                 ignoring: app.inkToolInHand,
                 child: Listener(
@@ -117,7 +116,8 @@ class InkObjectFrame extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (showAuthor) CanvasAuthorBadge(attribution: author),
+                      if (showAuthor) CanvasAuthorBadge(attribution: author,
+                          size: math.min(24.0, app.canvasHeaderSize.height - 1)),
                       if (showHeader)
                         Tooltip(
                           message: block.outlinePinned ? 'Unpin outline' : 'Pin outline',

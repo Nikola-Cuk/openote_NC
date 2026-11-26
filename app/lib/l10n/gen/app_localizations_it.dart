@@ -364,6 +364,21 @@ class LIt extends L {
   String get insertDiagramCard => 'Scheda del diagramma';
 
   @override
+  String get barCanvasAuthors => 'Mostra le iniziali sulla tela';
+
+  @override
+  String get settingsCanvasHeaderSize => 'Altezza dell’intestazione degli oggetti';
+
+  @override
+  String get settingsCanvasHeaderMinimal => 'Minima';
+
+  @override
+  String get settingsCanvasHeaderMedium => 'Media';
+
+  @override
+  String get settingsCanvasHeaderLarge => 'Grande';
+
+  @override
   String get commonCancel => 'Annulla';
 
   @override

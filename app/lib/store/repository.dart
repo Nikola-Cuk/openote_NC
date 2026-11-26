@@ -4099,47 +4099,61 @@ class Repository {
 
   List<({String pageId, String snippet})> searchPageContent(
       String notebookId, String query,
-      {int limit = 50}) {
+      {int? limit = 50, bool allMatches = false}) {
     final q = query.trim().toLowerCase();
-    if (q.isEmpty) return const [];
+    if (q.isEmpty || (limit != null && limit <= 0)) return const [];
+    final raw = jsonEncode(q);
+    final needle = raw.substring(1, raw.length - 1);
     final out = <({String pageId, String snippet})>[];
     final rows = _db(notebookId).select('SELECT page_id, json FROM page_mirror');
     for (final r in rows) {
       final json = r['json'] as String;
-      // Cheap reject on the raw JSON before parsing: most pages don't match,
-      // and decoding every page's block tree to find that out is the expensive
-      // part.
-      if (!json.toLowerCase().contains(q)) continue;
-      out.add((
-        pageId: r['page_id'] as String,
-        snippet: _snippetFrom(json, q),
-      ));
-      if (out.length >= limit) break;
+      if (!json.toLowerCase().contains(needle)) continue;
+      final pageId = r['page_id'] as String;
+      final snippets = _searchSnippets(json, q);
+      if (allMatches) {
+        for (final snippet in snippets) {
+          out.add((pageId: pageId, snippet: snippet));
+          if (limit != null && out.length >= limit) return out;
+        }
+      } else {
+        out.add((pageId: pageId, snippet: snippets.firstOrNull ?? ''));
+        if (limit != null && out.length >= limit) break;
+      }
     }
     return out;
   }
 
-  /// A readable line of context around the first match, from the page's text
-  /// blocks only — a raw-JSON substring would show field names and coordinates.
-  static String _snippetFrom(String json, String lowerQuery) {
+  static Iterable<String> _searchSnippets(String json, String query) sync* {
+    Object? page;
     try {
-      final j = jsonDecode(json) as Map<String, dynamic>;
-      for (final b in (j['blocks'] as List? ?? const [])) {
-        final content = (b as Map)['content'] as Map?;
-        // `sourceText` is an imported PDF slide's hidden text layer, so a
-        // lecture deck is findable by its words even though the page shows a
-        // picture (see export/pdf_import.dart).
-        final text = content?['text'] ?? content?['sourceText'];
-        if (text is! String) continue;
-        final i = text.toLowerCase().indexOf(lowerQuery);
-        if (i < 0) continue;
-        final start = (i - 30).clamp(0, text.length);
-        final end = (i + lowerQuery.length + 40).clamp(0, text.length);
-        final s = text.substring(start, end).replaceAll('\n', ' ').trim();
-        return '${start > 0 ? '…' : ''}$s${end < text.length ? '…' : ''}';
+      page = jsonDecode(json);
+    } on FormatException {
+      return;
+    }
+    if (page is! Map || page['blocks'] is! List) return;
+    for (final block in page['blocks'] as List) {
+      if (block is! Map || block['content'] is! Map) continue;
+      final content = block['content'] as Map;
+      for (final text in {
+        for (final field in ['text', 'sourceText', 'source', 'title', 'name'])
+          if (content[field] is String) content[field] as String,
+        if (content['cells'] case final List rows)
+          for (final row in rows.whereType<List>()) ...row.whereType<String>(),
+      }) {
+        final lower = text.toLowerCase();
+        var from = 0;
+        while (from < lower.length) {
+          final hit = lower.indexOf(query, from);
+          if (hit < 0) break;
+          final start = (hit - 35).clamp(0, text.length);
+          final end = (hit + query.length + 55).clamp(start, text.length);
+          final context = text.substring(start, end).replaceAll(RegExp(r'\s+'), ' ').trim();
+          yield '${start > 0 ? '…' : ''}$context${end < text.length ? '…' : ''}';
+          from = hit + query.length;
+        }
       }
-    } catch (_) {/* fall through to no snippet */}
-    return '';
+    }
   }
 
   /// Every blob hash with its mime and size, but **not** its bytes.

@@ -363,6 +363,21 @@ class LPt extends L {
   String get insertDiagramCard => 'Cartão de diagrama';
 
   @override
+  String get barCanvasAuthors => 'Mostrar iniciais na tela';
+
+  @override
+  String get settingsCanvasHeaderSize => 'Altura do cabeçalho do objeto';
+
+  @override
+  String get settingsCanvasHeaderMinimal => 'Mínima';
+
+  @override
+  String get settingsCanvasHeaderMedium => 'Média';
+
+  @override
+  String get settingsCanvasHeaderLarge => 'Grande';
+
+  @override
   String get commonCancel => 'Cancelar';
 
   @override

@@ -182,6 +182,12 @@ void main() {
       await t.pumpAndSettle();
       await t.tap(find.text('2×').last);
       await t.pumpAndSettle();
+      final style = find.byType(DropdownButtonFormField<DiagramLabelStyle>);
+      await t.ensureVisible(style);
+      await t.tap(style);
+      await t.pumpAndSettle();
+      await t.tap(find.text('Modern').last);
+      await t.pumpAndSettle();
 
       await t.tap(find.text('Save'));
       await t.pump();
@@ -193,6 +199,7 @@ void main() {
       expect(edge.toSide, isNotNull);
       expect(edge.flow, DiagramFlow.reverse);
       expect(edge.flowWidth, 2);
+      expect(edge.labelStyle, DiagramLabelStyle.modern);
       await t.pumpWidget(const SizedBox());
       app.cancelPendingSave();
     });
@@ -246,6 +253,11 @@ void main() {
         expect(find.byKey(ValueKey('canvas-outline-${block.id}')), findsOneWidget);
       }
       expect(find.byTooltip('Edit connector'), findsOneWidget);
+      final outline = find.byKey(ValueKey('canvas-outline-${note.id}'));
+      final minimalTop = t.getTopLeft(outline).dy;
+      app.setCanvasHeaderSize(CanvasHeaderSize.large);
+      await t.pump();
+      expect(t.getTopLeft(outline).dy, closeTo(minimalTop - 16 * app.canvas.scale, .1));
       app.cancelPendingSave();
     });
 
