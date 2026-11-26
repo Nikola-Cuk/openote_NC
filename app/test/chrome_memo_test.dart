@@ -54,7 +54,7 @@ const _actionsOnly = {
   'setActiveBlockFont',
   'setActiveBlockFontSize', 'setAngleMode', 'setBackground', 'setEraserMode',
   'setInkColor', 'setPageLayout', 'setPickingInkColor', 'setTagDue', 'setTool',
-  'togglePageOverview',
+  'togglePageOverview', 'toggleAuthorBadges',
   'setTouchDrawing', 'toggleFind', 'toggleLinePrefix', 'toggleLinksPanel',
   'toggleList', 'togglePlannerPanel', 'toggleSnap', 'toggleStudyPanel',
   'toggleTagOnSelection', 'toggleTagsPanel', 'toggleTocPanel', 'undo',
