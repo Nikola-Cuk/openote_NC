@@ -1225,7 +1225,9 @@ class Repository {
       final rel = p.relative(entity.path, from: from.path);
       if (excludeWorkspaceRuntime) {
         if (const {'.instance-lock', '.open-request', '.open-request.tmp'}
-            .contains(rel)) {
+            .contains(rel) || rel.endsWith('.onote-shm')) {
+          // SQLite reconstructs the shared-memory index from the database and
+          // its WAL. Windows can hold a byte-range lock on the live index.
           continue;
         }
         if (FileSystemEntity.typeSync(entity.path, followLinks: false) ==

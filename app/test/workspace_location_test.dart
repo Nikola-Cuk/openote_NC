@@ -16,8 +16,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/store/repository.dart';
 import 'package:path/path.dart' as p;
 
+import 'support/sqlite.dart';
+
 void main() {
   late Directory tmp;
+  var haveSqlite = false;
+  setUpAll(() => haveSqlite = initSqliteForTests());
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('onote-ws-');
@@ -119,6 +123,26 @@ void main() {
   });
 
   group('copyWorkspaceTo', () {
+    test('an open notebook is readable from the copied workspace', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final from = Directory(p.join(tmp.path, 'from'));
+      final to = Directory(p.join(tmp.path, 'to'));
+      final repo = await Repository.openAt(from);
+      addTearDown(repo.dispose);
+      final notebook = await repo.createNotebook('Moved notes');
+      repo.checkpointWorkspace();
+      await Repository.copyWorkspaceTo(from, to);
+
+      final copied = await Repository.openAt(to);
+      addTearDown(copied.dispose);
+      final moved = copied.notebooks.single;
+      expect(moved.id, notebook.id);
+      expect(moved.title, notebook.title);
+      expect(p.isWithin(to.path, moved.file), isTrue);
+      expect(copied.loadNodes(moved.id).map((node) => node.title),
+          contains('Untitled page'));
+    });
+
     test('copies every file and leaves the original in place', () async {
       final from = Directory(p.join(tmp.path, 'from'))..createSync();
       File(p.join(from.path, 'workspace.json')).writeAsStringSync('{"v":1}');
