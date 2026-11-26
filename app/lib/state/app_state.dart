@@ -8652,6 +8652,7 @@ class AppState extends ChangeNotifier
     // A window onto a locked page asks again on every visit (bug 33), and so
     // does a page whose passcode is set to "Every time it is opened".
     if (id != pageId) {
+      if (_visitUnlocks.isNotEmpty) _gateRevision++;
       _windowUnlocks.clear();
       _visitUnlocks.clear();
     }

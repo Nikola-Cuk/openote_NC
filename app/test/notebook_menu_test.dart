@@ -148,6 +148,7 @@ void main() {
     expect(app.pageId, betaPage);
     expect(results, findsOneWidget);
     expect(first, findsOneWidget);
+    expect(tester.getTopLeft(first).dy, lessThan(tester.getTopLeft(second).dy));
     await tester.runAsync(() async {
       await tester.tap(first);
       await Future<void>.delayed(const Duration(milliseconds: 50));

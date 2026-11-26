@@ -520,7 +520,11 @@ class _SidebarState extends State<Sidebar> {
   Future<List<NotebookSearchHit>>? _otherMatches;
 
   void _prepareSearch(String q) {
-    final key = (q, _searchOrigin, app.gateRevision);
+    final notebook = app.notebookId;
+    final protected = notebook != null && app.protectedNodeIdsOf(notebook).isNotEmpty;
+    // A notebook switch reloads the protection cache even when both books
+    // are unlocked. Keep the current results and scroll position in that case.
+    final key = (q, _searchOrigin, protected ? app.gateRevision : 0);
     if (_searchKey == key) return;
     _searchKey = key;
     final active = app.notebooks.where((nb) => nb.id == _searchOrigin).firstOrNull;
