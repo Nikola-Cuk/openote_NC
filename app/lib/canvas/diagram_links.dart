@@ -123,19 +123,28 @@ Size _measureBadge(BuildContext context, DiagramConnection edge, bool showAuthor
   return size;
 }
 
+// Signed distance from the horizontal capsule. The shoulders follow the
+// connector only where it meets this shape, regardless of the route angle.
+double _capsuleDistance(Rect badge, Offset point) {
+  final radius = badge.height / 2;
+  final halfSpan = math.max(0.0, badge.width / 2 - radius);
+  final x = math.max(0.0, (point.dx - badge.center.dx).abs() - halfSpan);
+  return Offset(x, point.dy - badge.center.dy).distance - radius;
+}
+
+double _smoothStep(double value) {
+  final t = value.clamp(0.0, 1.0);
+  return t * t * (3 - 2 * t);
+}
+
+const _modernShoulder = 9.0;
+
 Path _modernHull(ui.PathMetric metric, Rect badge,
     {required double lineWidth, required bool wholeLine}) {
   final middle = metric.length / 2;
-  final tangent = metric.getTangentForOffset(middle)!;
-  final direction = tangent.vector;
-  final along = direction.dx.abs() * badge.width / 2 +
-      direction.dy.abs() * badge.height / 2;
-  final across = direction.dy.abs() * badge.width / 2 +
-      direction.dx.abs() * badge.height / 2;
-  final spread = math.min(middle, along + 24);
-  final plateau = math.min(spread * .68, along * .54);
   final half = lineWidth / 2;
-  final lifted = math.max(half, math.max(badge.height * .45, across * .78));
+  final radius = (badge.bottomRight - badge.center).distance;
+  final spread = math.min(middle, radius + _modernShoulder);
   final begin = wholeLine ? 0.0 : middle - spread;
   final end = wholeLine ? metric.length : middle + spread;
   final count = ((end - begin) / 2).ceil().clamp(2, 2600);
@@ -144,11 +153,10 @@ Path _modernHull(ui.PathMetric metric, Rect badge,
     final distance = begin + (end - begin) * i / count;
     final point = metric.getTangentForOffset(distance);
     if (point == null) continue;
-    final taper = ((spread - (middle - distance).abs()) /
-        math.max(1.0, spread - plateau)).clamp(0.0, 1.0);
-    final eased = taper * taper * (3 - 2 * taper);
+    final outside = _capsuleDistance(badge, point.position);
+    final taper = _smoothStep(1 - outside / _modernShoulder);
     final normal = Offset(-point.vector.dy, point.vector.dx);
-    final width = normal * (half + (lifted - half) * eased);
+    final width = normal * (wholeLine ? half + 2 * taper : (half + 2) * taper);
     near.add(point.position + width);
     far.add(point.position - width);
   }
@@ -599,7 +607,12 @@ class _FlowPainter extends CustomPainter {
       for (var progressed = travel; progressed < length; progressed += gap) {
         final tangent = metric.getTangentForOffset(
             forward ? progressed : length - progressed);
-        if (tangent == null || covered.contains(tangent.position)) continue;
+        if (tangent == null) continue;
+        final labelFade = link.hull == null
+            ? (covered.contains(tangent.position) ? 0.0 : 1.0)
+            : _smoothStep((_capsuleDistance(link.badge, tangent.position) -
+                _modernShoulder - width * .45) / 7);
+        if (labelFade == 0) continue;
         final direction = forward ? tangent.vector : -tangent.vector;
         final normal = Offset(-direction.dy, direction.dx);
         final middle = tangent.position;
@@ -610,7 +623,7 @@ class _FlowPainter extends CustomPainter {
         final opacity = math.min(progressed, length - progressed) / fade;
         final fadeInOut = opacity.clamp(0.0, 1.0);
         arrow.color = color.withValues(
-            alpha: .95 * fadeInOut * fadeInOut * (3 - 2 * fadeInOut));
+            alpha: .95 * labelFade * _smoothStep(fadeInOut));
         canvas.drawPath(
           Path()..moveTo(start.dx, start.dy)
             ..lineTo(tip.dx, tip.dy)..lineTo(end.dx, end.dy),

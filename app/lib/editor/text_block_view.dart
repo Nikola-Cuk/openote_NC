@@ -286,31 +286,12 @@ class _TextBlockViewState extends State<TextBlockView> {
   bool get editing => !widget.block.textLocked &&
       widget.app.editingBlockId == widget.block.id;
 
-  /// F-3 fix: exit cleanup runs on the STATE transition (editing → not).
-  ///
-  /// [AppState.pendingEmptyBlockId] is set at the CLICK that opens a block
-  /// (`BlockView._tap`/`PageCanvas._createTextAt`), not here: this widget's
-  /// own `build` runs AFTER `BlockView`'s in the same frame, so setting it
-  /// on an entry transition here would always be one frame too late for the
-  /// chrome decision that already needed it. This only ever clears it, on
-  /// the way out — belt and braces alongside the `onChanged` clear, for an
-  /// exit that was never typed into at all (Escape, click away).
   void _handleExitTransition() {
     if (_wasEditing && !editing) {
-      if (widget.app.pendingEmptyBlockId == widget.block.id) {
-        widget.app.pendingEmptyBlockId = null;
-      }
       _undoPushed = false;
       _lastUndoAt = 0;
       widget.app.clearActiveEditor(widget.block.id);
       _closeSession();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (!widget.block.isDiagramCard &&
-            _engine.deserialize(widget.block.content).trim().isEmpty) {
-          widget.app.removeBlock(widget.block.id, recordUndo: false);
-        }
-      });
     }
     _wasEditing = editing;
   }

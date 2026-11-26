@@ -35,6 +35,15 @@ void main() {
       expect(repo.readPage(active.id, page).blocks.single.attribution.created?.initials, 'NC');
 
       app.setAuthorProfile('Ana Ilic', showBadges: true);
+      app.select(block.id);
+      app.moveSelectedBy(28, 15);
+      await app.flushSave();
+      final moved = repo.readPage(active.id, page).blocks.single;
+      expect(moved.x, block.x);
+      expect(moved.y, block.y);
+      expect(moved.attribution.created?.initials, 'NC');
+      expect(moved.attribution.edited, isNull);
+
       block.content['text'] = 'First occurrence of test token followed by '
           'enough context to leave distinct snippets for the next occurrence of test token.';
       app.updateBlock(block);
@@ -43,6 +52,33 @@ void main() {
       expect(authors.created?.initials, 'NC');
       expect(authors.edited?.initials, 'AI');
       expect(authors.edited!.at, greaterThanOrEqualTo(authors.created!.at));
+
+      final otherBlock = app.addBlock(Block(
+        type: BlockType.text, x: 400, y: 260,
+        content: {'text': 'Connector target'},
+      ));
+      await app.flushSave();
+      app.setAuthorProfile('Petar Petrovic');
+      final edge = DiagramConnection(from: block.id, to: otherBlock.id);
+      app.saveDiagramConnection(edge);
+      await app.flushSave();
+      expect(repo.readPage(active.id, page).blocks
+          .firstWhere((b) => b.id == block.id).attribution.edited?.initials, 'PP');
+
+      app.setAuthorProfile('Ana Ilic');
+      app.saveDiagramConnection(edge);
+      app.select(block.id);
+      app.moveSelectedBy(20, 0);
+      await app.flushSave();
+      final connected = repo.readPage(active.id, page);
+      expect(connected.blocks.firstWhere((b) => b.id == block.id)
+          .attribution.edited?.initials, 'PP');
+      expect(connected.props.diagramConnections.single.attribution.edited, isNull);
+
+      app.removeDiagramConnection(edge.id);
+      await app.flushSave();
+      expect(repo.readPage(active.id, page).blocks
+          .firstWhere((b) => b.id == block.id).attribution.edited?.initials, 'AI');
 
       await app.selectNotebook(other.id);
       final hits = app.searchNotebook(active, 'test token');

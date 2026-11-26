@@ -2694,8 +2694,8 @@ class AppState extends ChangeNotifier
     reloadNodes();
     if (pageId != null && changed.pages.contains(pageId)) {
       final data = await engine.loadPage(nb, pageId!);
-      blocks = data.blocks;
       pageProps = data.props;
+      blocks = data.blocks;
       docRevision++;
     }
     lastSyncPull = pending.length;
@@ -3757,8 +3757,8 @@ class AppState extends ChangeNotifier
       // Skipping is safe either way: the next `flushSave` converts whatever
       // it is handed through `persistAll`.
       final data = await engine.loadPage(nb, pageId!);
-      blocks = data.blocks;
       pageProps = data.props;
+      blocks = data.blocks;
       docRevision++;
     }
     _invalidateSyncStatus();
@@ -3916,8 +3916,8 @@ class AppState extends ChangeNotifier
     final pid = pageId;
     if (nb == notebookId && pid != null) {
       final data = await engine.loadPage(nb, pid);
-      blocks = data.blocks;
       pageProps = data.props;
+      blocks = data.blocks;
       docRevision++;
     }
     notifyListeners();
@@ -4751,6 +4751,7 @@ class AppState extends ChangeNotifier
   // Page content
   List<Block> _blocks = [];
   final _protectedTextBlocks = <String, String>{};
+  final _newDiagramCards = <String>{};
   Map<String, String> _authorBaseline = {};
 
   @override
@@ -4758,6 +4759,7 @@ class AppState extends ChangeNotifier
 
   set blocks(List<Block> value) {
     _blocks = value;
+    _newDiagramCards.clear();
     _protectedTextBlocks
       ..clear()
       ..addEntries(value.where((b) => b.textLocked).map(
@@ -4800,21 +4802,66 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  String _blockAuthorFingerprint(Block b) {
-    final data = b.toJson()
-      ..remove(blockAttributionKey)
-      ..remove('updatedAt');
-    if (b.type == BlockType.text && b.content['autoWidth'] != false) {
-      data.remove('w');
+  Map<String, dynamic> _connectionAuthorContent(DiagramConnection edge) =>
+      edge.toJson()
+        ..remove(blockAttributionKey)
+        ..['labelStyle'] = edge.effectiveLabelStyle.name;
+
+  Map<String, String> _authorFingerprints() {
+    final connections = <String, List<Map<String, dynamic>>>{};
+    final edges = [...pageProps.diagramConnections]
+      ..sort((a, b) => a.id.compareTo(b.id));
+    for (final edge in edges) {
+      final data = _connectionAuthorContent(edge);
+      (connections[edge.from] ??= []).add(data);
+      (connections[edge.to] ??= []).add(data);
     }
-    return canonicalJson(data);
+    return {
+      for (final b in blocks)
+        if ((b.canAnchor || b.attribution.latest != null) &&
+            !_isEmptyTextDraft(b))
+          b.id: canonicalJson({
+            'type': b.type.name,
+            'content': _blockAuthorContent(b),
+            'connections': connections[b.id],
+          }),
+    };
+  }
+
+  Map<String, dynamic> _blockAuthorContent(Block b) {
+    final content = Map<String, dynamic>.of(b.content)
+      ..remove(Block.outlineKey)
+      ..remove(Block.textLockKey)
+      ..remove('autoWidth')
+      ..remove('locked');
+    if (b.type == BlockType.ink) {
+      final strokes = InkStorage.strokesOf(content);
+      if (strokes.isNotEmpty) {
+        // Ink is stored in page coordinates. Compare it relative to the
+        // block so translating a stroke leaves its attribution alone.
+        List<int> relative(List values, double origin) => [
+          for (final value in values) (((value as num) - origin) * 1000000).round(),
+        ];
+        content.remove(kInkKey);
+        content.remove(kInkFromKey);
+        content[kStrokesKey] = [
+          for (final stroke in strokes)
+            if (stroke is Map)
+              {
+                ...stroke,
+                if (stroke['x'] case final List xs) 'x': relative(xs, b.x),
+                if (stroke['y'] case final List ys) 'y': relative(ys, b.y),
+              }
+            else
+              stroke,
+        ];
+      }
+    }
+    return content;
   }
 
   void _resetAuthorBaseline() {
-    _authorBaseline = authorFullName.isEmpty ? {} : {
-      for (final b in blocks)
-        if (b.canAnchor || b.attribution.latest != null) b.id: _blockAuthorFingerprint(b),
-    };
+    _authorBaseline = authorFullName.isEmpty ? {} : _authorFingerprints();
   }
 
   AuthorStamp? _currentAuthorStamp() {
@@ -4826,11 +4873,10 @@ class AppState extends ChangeNotifier
     final stamp = _currentAuthorStamp();
     if (stamp == null) return;
     final before = _authorBaseline;
-    final after = <String, String>{};
+    final after = _authorFingerprints();
     for (final b in blocks) {
-      if (!b.canAnchor && b.attribution.latest == null) continue;
-      final fingerprint = _blockAuthorFingerprint(b);
-      after[b.id] = fingerprint;
+      final fingerprint = after[b.id];
+      if (fingerprint == null) continue;
       final previous = before[b.id];
       if (previous == fingerprint) continue;
       final attribution = b.attribution;
@@ -4864,10 +4910,9 @@ class AppState extends ChangeNotifier
     }
     if (locked) {
       if (editingBlockId == id) {
-        clearActiveEditor(id);
-        editingBlockId = null;
+        _finishTextEditing();
         pendingCaretGlobal = null;
-        if (pendingEmptyBlockId == id) pendingEmptyBlockId = null;
+        if (blockById(id) == null) return;
       }
       b.content[Block.textLockKey] = true;
     } else {
@@ -8111,6 +8156,7 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> selectNotebook(String id) async {
+    _finishTextEditing();
     await flushSave();
     notebookId = id;
     // Replay this notebook's log in the background now, so the first edit
@@ -8601,6 +8647,7 @@ class AppState extends ChangeNotifier
 
   Future<void> selectPage(String? id) async {
     _rememberView(); // keep your place when flicking between pages (§7a.5)
+    _finishTextEditing();
     await flushSave();
     // A window onto a locked page asks again on every visit (bug 33), and so
     // does a page whose passcode is set to "Every time it is opened".
@@ -8618,12 +8665,12 @@ class AppState extends ChangeNotifier
     findMatches = [];
     findQuery = '';
     if (id == null) {
-      blocks = [];
       pageProps = PageProps();
+      blocks = [];
     } else {
       final data = await engine.loadPage(notebookId!, id);
-      blocks = data.blocks;
       pageProps = data.props;
+      blocks = data.blocks;
       _repairImportedFieldCodes();
       // A table on the page you just opened becomes a table in the paragraph
       // it belongs to, here and now. See [convertOpenPageTables]: it is free
@@ -9475,6 +9522,7 @@ class AppState extends ChangeNotifier
       h: 160,
       content: {Block.diagramCardKey: true, 'text': '', 'autoWidth': false},
     ));
+    _newDiagramCards.add(card.id);
     select(card.id, edit: true);
   }
 
@@ -9521,6 +9569,9 @@ class AppState extends ChangeNotifier
         blockById(edge.to)?.canAnchor != true) return;
     final edges = pageProps.diagramConnections;
     final old = edges.where((previous) => previous.id == edge.id).firstOrNull;
+    if (old != null &&
+        canonicalJson(_connectionAuthorContent(old)) ==
+            canonicalJson(_connectionAuthorContent(edge))) return;
     final stamp = _currentAuthorStamp();
     final attribution = stamp == null
         ? old?.attribution ?? edge.attribution
@@ -10266,7 +10317,9 @@ class AppState extends ChangeNotifier
       final author = currentAuthors[b.id];
       if (author != null) b.unknownFields[blockAttributionKey] = author;
     }
+    final newCards = _newDiagramCards.intersection({for (final b in restored) b.id});
     blocks = restored;
+    _newDiagramCards.addAll(newCards);
     _authorBaseline = authorBaseline;
     selectedIds.clear();
     selectedBlockId = null;
@@ -10914,6 +10967,7 @@ class AppState extends ChangeNotifier
     if (blockById(id)?.textLocked ?? false) return;
     if (recordUndo) pushUndo();
     blocks.removeWhere((b) => b.id == id);
+    _newDiagramCards.remove(id);
     _removeConnectionsTo({id});
     selectedIds.remove(id);
     if (selectedBlockId == id) selectedBlockId = selectedIds.firstOrNull;
@@ -10929,6 +10983,7 @@ class AppState extends ChangeNotifier
     if (selectedIds.isEmpty || selectionHasLockedText) return;
     pushUndo();
     blocks.removeWhere((b) => selectedIds.contains(b.id));
+    _newDiagramCards.removeAll(selectedIds);
     _removeConnectionsTo(selectedIds);
     selectedIds.clear();
     selectedBlockId = null;
@@ -11084,9 +11139,35 @@ class AppState extends ChangeNotifier
     }
   }
 
+  bool _isEmptyTextDraft(Block b) =>
+      b.id == editingBlockId &&
+      b.type == BlockType.text &&
+      !b.textLocked &&
+      (!b.isDiagramCard || _newDiagramCards.contains(b.id)) &&
+      !b.hasTextContent &&
+      b.diagramCanvasPageId == null &&
+      !pageProps.diagramConnections.any((edge) => edge.from == b.id || edge.to == b.id);
+
+  void _finishTextEditing() {
+    final id = editingBlockId;
+    if (id == null) return;
+    final block = blockById(id);
+    final discard = block != null && _isEmptyTextDraft(block);
+    _newDiagramCards.remove(id);
+    if (pendingEmptyBlockId == id) pendingEmptyBlockId = null;
+    clearActiveEditor(id);
+    editingBlockId = null;
+    if (discard) removeBlock(id, recordUndo: false);
+  }
+
   void select(String? id, {bool edit = false, bool additive = false}) {
     if (edit && id != null && (blockById(id)?.textLocked ?? false)) {
       edit = false;
+    }
+    if (!edit || additive || editingBlockId != id) {
+      final wasEditing = editingBlockId;
+      _finishTextEditing();
+      if (id != null && id == wasEditing && blockById(id) == null) id = null;
     }
     // The caret token is for the selection being made RIGHT NOW. Expiring it
     // here rather than trusting one widget type to consume it means a click
@@ -11126,6 +11207,7 @@ class AppState extends ChangeNotifier
   }
 
   void selectMany(Iterable<String> ids) {
+    _finishTextEditing();
     selectedIds
       ..clear()
       // A marquee that catches half a group takes all of it: the box was
@@ -11460,6 +11542,7 @@ class AppState extends ChangeNotifier
   /// Select a block and centre the view on it. Shared by find and the page
   /// outline so both behave identically.
   void jumpToBlock(String id) {
+    _finishTextEditing();
     final b = blocks.where((b) => b.id == id).firstOrNull;
     if (b == null) return;
     selectedIds
@@ -11662,7 +11745,8 @@ class AppState extends ChangeNotifier
       _preserveLockedTextBlocks(blocks);
       _stampChangedBlocks();
       final toSave = InkStorage.persistAll(
-          blocks, (bytes) => importBlob(nb, bytes, inkMimeType));
+          blocks.where((b) => !_isEmptyTextDraft(b)).toList(),
+          (bytes) => importBlob(nb, bytes, inkMimeType));
       // The engine owns persistence: version snapshot (throttled, SYNC-8) + the
       // mirror write, plus content-hash change-detection on the Rust engine (a
       // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.

@@ -611,12 +611,15 @@ class Block {
   bool get outlinePinned => content[outlineKey] is bool
       ? content[outlineKey] as bool : isDiagramCard;
 
-  bool get canAnchor {
-    if (type != BlockType.text || isDiagramCard) return true;
+  static final _invisibleText = RegExp(r'[\s\u00a0\u200b\u200c\u200d\u2060\ufeff]');
+
+  bool get hasTextContent {
     final text = content['text'], atoms = content['atoms'];
-    return (text is String && text.trim().isNotEmpty) ||
+    return (text is String && text.replaceAll(_invisibleText, '').isNotEmpty) ||
         (atoms is Map && atoms.isNotEmpty);
   }
+
+  bool get canAnchor => type != BlockType.text || isDiagramCard || hasTextContent;
 
   CanvasAttribution get attribution =>
       CanvasAttribution.fromJson(unknownFields[blockAttributionKey]);

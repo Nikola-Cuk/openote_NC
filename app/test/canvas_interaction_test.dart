@@ -145,6 +145,8 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       app.addDiagramCard(const Offset(64, 180));
       final card = app.blocks.single;
+      card.content['text'] = 'Card';
+      app.updateBlock(card);
       final note = app.addBlock(Block(
         type: BlockType.text,
         x: 470,
@@ -221,6 +223,43 @@ void main() {
       await t.drag(bottom, const Offset(0, 85), kind: PointerDeviceKind.mouse);
       await t.pumpAndSettle();
       expect(note.h, greaterThan(before));
+      app.cancelPendingSave();
+    });
+
+    testWidgets('leaving a whitespace-only editor discards its draft', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pump(t, listen: true);
+      final note = app.addBlock(Block(
+        type: BlockType.text, x: 80, y: 160, w: 240,
+        content: {'text': ''},
+      ));
+      app.pendingEmptyBlockId = note.id;
+      app.select(note.id, edit: true);
+      await t.pump();
+      await t.enterText(find.byType(EditableText).last, ' \n \n ');
+      await t.pump();
+      expect(note.hasTextContent, isFalse);
+      app.select(null);
+      await t.pump();
+      expect(app.blockById(note.id), isNull);
+      expect(app.pendingEmptyBlockId, isNull);
+
+      app.addDiagramCard(const Offset(90, 200));
+      final card = app.blocks.single;
+      await t.pump();
+      await t.enterText(find.byType(EditableText).last, ' \n ');
+      await t.pump();
+      app.select(null);
+      await t.pump();
+      expect(app.blockById(card.id), isNull);
+
+      final imageNote = app.addBlock(Block(
+        type: BlockType.text, x: 80, y: 160, w: 240,
+        content: {'text': ' ', 'atoms': {'image': <String, dynamic>{}}},
+      ));
+      app.select(imageNote.id, edit: true);
+      app.select(null);
+      expect(app.blockById(imageNote.id), same(imageNote));
       app.cancelPendingSave();
     });
 
