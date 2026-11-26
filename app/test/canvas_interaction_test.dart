@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/block_view.dart';
+import 'package:openote/canvas/diagram_links.dart';
 import 'package:openote/canvas/page_canvas.dart';
 import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/l10n/l10n.dart';
@@ -23,6 +24,24 @@ import 'support/sqlite.dart';
 void main() {
   var haveSqlite = false;
   setUpAll(() => haveSqlite = initSqliteForTests());
+
+  test('connector endpoints meet the close anchors for every path', () {
+    const from = Rect.fromLTWH(20, 24, 100, 90);
+    const to = Rect.fromLTWH(220, 162, 130, 70);
+    final start = diagramAnchor(from, DiagramSide.right);
+    final end = diagramAnchor(to, DiagramSide.top);
+    expect(start, from.centerRight + const Offset(4, 0));
+    expect(end, to.topCenter - const Offset(0, 4));
+    for (final route in DiagramRoute.values) {
+      final metric = diagramPath(from, to, route,
+              fromSide: DiagramSide.right, toSide: DiagramSide.top)
+          .computeMetrics().single;
+      expect((metric.getTangentForOffset(0)!.position - start).distance,
+          lessThan(.01), reason: route.name);
+      expect((metric.getTangentForOffset(metric.length)!.position - end).distance,
+          lessThan(.01), reason: route.name);
+    }
+  });
 
   group('where an auto-width box stops growing', () {
     test('far from the edge, the ordinary clamp wins and the edge is moot', () {
@@ -149,13 +168,30 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('Connect objects'), findsOneWidget);
 
-      await t.tap(find.text('Save'));
+      final flow = find.byType(DropdownButtonFormField<DiagramFlow>);
+      await t.ensureVisible(flow);
+      await t.tap(flow);
       await t.pumpAndSettle();
+      await t.tap(find.text('Reverse').last);
+      await t.pumpAndSettle();
+      final width = find.byType(DropdownButtonFormField<int>);
+      await t.ensureVisible(width);
+      await t.tap(width);
+      await t.pumpAndSettle();
+      await t.tap(find.text('2×').last);
+      await t.pumpAndSettle();
+
+      await t.tap(find.text('Save'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
       final edge = app.pageProps.diagramConnections.single;
       expect(edge.from, card.id);
       expect(edge.to, note.id);
       expect(edge.fromSide, DiagramSide.right);
       expect(edge.toSide, isNotNull);
+      expect(edge.flow, DiagramFlow.reverse);
+      expect(edge.flowWidth, 2);
+      await t.pumpWidget(const SizedBox());
       app.cancelPendingSave();
     });
 

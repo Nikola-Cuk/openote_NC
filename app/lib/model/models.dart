@@ -204,6 +204,8 @@ enum DiagramStroke { solid, dashed, dotted, doubleLine }
 
 enum DiagramSide { top, right, bottom, left }
 
+enum DiagramFlow { none, forward, reverse }
+
 class DiagramConnection {
   DiagramConnection({
     String? id,
@@ -215,6 +217,8 @@ class DiagramConnection {
     this.icon = '',
     this.route = DiagramRoute.straight,
     this.stroke = DiagramStroke.solid,
+    this.flow = DiagramFlow.none,
+    this.flowWidth = 3,
   }) : id = id ?? newId();
 
   final String id;
@@ -226,13 +230,16 @@ class DiagramConnection {
   final String icon;
   final DiagramRoute route;
   final DiagramStroke stroke;
+  final DiagramFlow flow;
+  final int flowWidth;
 
   DiagramConnection? remap(Map<String, String> ids) {
     final start = ids[from], end = ids[to];
     if (start == null || end == null) return null;
     return DiagramConnection(
         from: start, to: end, fromSide: fromSide, toSide: toSide,
-        label: label, icon: icon, route: route, stroke: stroke);
+        label: label, icon: icon, route: route, stroke: stroke,
+        flow: flow, flowWidth: flowWidth);
   }
 
   Map<String, dynamic> toJson() => {
@@ -245,6 +252,8 @@ class DiagramConnection {
         if (icon.isNotEmpty) 'icon': icon,
         'route': route.name,
         'stroke': stroke.name,
+        if (flow != DiagramFlow.none) 'flow': flow.name,
+        if (flowWidth != 3) 'flowWidth': flowWidth,
       };
 
   static DiagramConnection? fromJson(Object? data) {
@@ -266,6 +275,9 @@ class DiagramConnection {
               .firstOrNull ?? DiagramRoute.straight,
       stroke: DiagramStroke.values.where((v) => v.name == data['stroke'])
               .firstOrNull ?? DiagramStroke.solid,
+      flow: DiagramFlow.values.where((v) => v.name == data['flow'])
+              .firstOrNull ?? DiagramFlow.none,
+      flowWidth: data['flowWidth'] == 2 ? 2 : 3,
     );
   }
 }

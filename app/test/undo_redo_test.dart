@@ -45,12 +45,17 @@ void main() {
       icon: '★',
       route: DiagramRoute.wavy,
       stroke: DiagramStroke.doubleLine,
+      flow: DiagramFlow.reverse,
+      flowWidth: 2,
     );
     app.saveDiagramConnection(edge);
 
     final restored = PageProps.fromJson(app.pageProps.toJson())
         .diagramConnections.single;
     expect(restored.toJson(), edge.toJson());
+    expect(DiagramConnection.fromJson({
+      'id': 'old', 'from': 'a', 'to': 'b',
+    })?.flow, DiagramFlow.none);
 
     app.removeBlock(a.id);
     expect(app.pageProps.diagramConnections, isEmpty);

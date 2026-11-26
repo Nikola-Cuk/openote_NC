@@ -1795,7 +1795,9 @@ class _PageCanvasState extends State<PageCanvas> {
                           ),
                         ),
                         if (app.pageProps.diagramConnections.isNotEmpty)
-                          Positioned.fill(child: DiagramLinks(app: app)),
+                          Positioned.fill(child: DiagramLinks(
+                            app: app, visible: visible,
+                          )),
                         // Painted in z order (review fix: z was stored but
                         // insertion order used to win) — except that the
                         // SELECTION outranks z. Hit-testing follows paint

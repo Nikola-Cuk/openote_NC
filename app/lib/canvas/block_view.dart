@@ -1031,10 +1031,11 @@ class _BlockViewState extends State<BlockView> {
                       onPanUpdate: _resize,
                       onPanEnd: (_) => _resizeUndoPushed = false,
                       onPanCancel: () => _resizeUndoPushed = false,
-                      child: Center(
+                      child: Align(
+                        alignment: const Alignment(0, .72),
                         child: Container(
                           width: 10,
-                          height: 28,
+                          height: 24,
                           decoration: BoxDecoration(
                             color: primaryColor.withValues(alpha: .85),
                             borderRadius: BorderRadius.circular(5),
@@ -1053,15 +1054,16 @@ class _BlockViewState extends State<BlockView> {
                   child: MouseRegion(
                     cursor: SystemMouseCursors.resizeUpDown,
                     child: GestureDetector(
-                      key: ValueKey('resize-height-${b.id}'),
                       behavior: HitTestBehavior.opaque, // whole strip, as above
                       supportedDevices: devices,
                       onPanUpdate: (d) =>
                           _resizeBy(d, width: false, height: true),
                       onPanEnd: (_) => _resizeUndoPushed = false,
                       onPanCancel: () => _resizeUndoPushed = false,
-                      child: Center(
+                      child: Align(
+                        alignment: const Alignment(-.52, 0),
                         child: Container(
+                          key: ValueKey('resize-height-${b.id}'),
                           width: 28,
                           height: 10,
                           decoration: BoxDecoration(

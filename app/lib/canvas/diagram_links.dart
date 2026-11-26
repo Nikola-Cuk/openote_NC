@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui show PathMetric;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -6,12 +7,17 @@ import 'package:flutter/material.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 
-Offset diagramAnchor(Rect rect, DiagramSide side) => switch (side) {
-      DiagramSide.top => rect.topCenter,
-      DiagramSide.right => rect.centerRight,
-      DiagramSide.bottom => rect.bottomCenter,
-      DiagramSide.left => rect.centerLeft,
-    };
+const _anchorGap = 4.0;
+
+Offset diagramAnchor(Rect rect, DiagramSide side) {
+  final edge = switch (side) {
+    DiagramSide.top => rect.topCenter,
+    DiagramSide.right => rect.centerRight,
+    DiagramSide.bottom => rect.bottomCenter,
+    DiagramSide.left => rect.centerLeft,
+  };
+  return edge + _outward(side) * _anchorGap;
+}
 
 Offset _outward(DiagramSide side) => switch (side) {
       DiagramSide.top => const Offset(0, -1),
@@ -20,20 +26,18 @@ Offset _outward(DiagramSide side) => switch (side) {
       DiagramSide.left => const Offset(-1, 0),
     };
 
-Offset _edgeOf(Rect rect, Offset toward) {
+DiagramSide _sideToward(Rect rect, Offset toward) {
   final delta = toward - rect.center;
-  if (delta == Offset.zero) return rect.center;
-  final scale = math.min(
-    delta.dx == 0 ? double.infinity : rect.width / 2 / delta.dx.abs(),
-    delta.dy == 0 ? double.infinity : rect.height / 2 / delta.dy.abs(),
-  );
-  return rect.center + delta * scale;
+  if (delta.dx.abs() * rect.height >= delta.dy.abs() * rect.width) {
+    return delta.dx < 0 ? DiagramSide.left : DiagramSide.right;
+  }
+  return delta.dy < 0 ? DiagramSide.top : DiagramSide.bottom;
 }
 
 Path diagramPath(Rect from, Rect to, DiagramRoute route,
     {DiagramSide? fromSide, DiagramSide? toSide}) {
-  final start = fromSide == null ? _edgeOf(from, to.center) : diagramAnchor(from, fromSide);
-  final end = toSide == null ? _edgeOf(to, from.center) : diagramAnchor(to, toSide);
+  final start = diagramAnchor(from, fromSide ?? _sideToward(from, to.center));
+  final end = diagramAnchor(to, toSide ?? _sideToward(to, from.center));
   final delta = end - start;
   final distance = delta.distance;
   final path = Path()..moveTo(start.dx, start.dy);
@@ -80,37 +84,79 @@ Path diagramPath(Rect from, Rect to, DiagramRoute route,
   return path;
 }
 
-class DiagramLinks extends StatelessWidget {
-  const DiagramLinks({super.key, required this.app});
+typedef _DiagramLink = (DiagramConnection, Path, Offset);
+
+class DiagramLinks extends StatefulWidget {
+  const DiagramLinks({super.key, required this.app, required this.visible});
 
   final AppState app;
+  final Rect visible;
+
+  @override
+  State<DiagramLinks> createState() => _DiagramLinksState();
+}
+
+class _DiagramLinksState extends State<DiagramLinks>
+    with SingleTickerProviderStateMixin {
+  late final _phase = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 360));
+
+  @override
+  void dispose() {
+    _phase.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final app = widget.app;
     final blocks = {for (final b in app.blocks) b.id: b};
-    final links = <(DiagramConnection, Path, Offset)>[];
+    final links = <_DiagramLink>[];
     for (final edge in app.pageProps.diagramConnections) {
       final from = blocks[edge.from], to = blocks[edge.to];
       if (from == null || to == null) continue;
       final path = diagramPath(app.blockRect(from), app.blockRect(to), edge.route,
           fromSide: edge.fromSide, toSide: edge.toSide);
+      if (!path.getBounds().inflate(32).overlaps(widget.visible)) continue;
       final metric = path.computeMetrics().firstOrNull;
-      final labelAt = metric == null
-          ? null
-          : metric.getTangentForOffset(metric.length / 2)?.position;
-      if (labelAt != null) links.add((edge, path, labelAt));
+      if (metric == null) continue;
+      final middle = metric.getTangentForOffset(metric.length / 2);
+      if (middle == null) continue;
+      var labelAt = middle.position;
+      if (edge.flow != DiagramFlow.none) {
+        final direction = middle.vector;
+        final normal = Offset(-direction.dy, direction.dx);
+        labelAt += normal * (normal.dy > 0 ? -18 : 18);
+      }
+      links.add((edge, path, labelAt));
     }
+    final steady = links.where((link) => link.$1.flow == DiagramFlow.none).toList();
+    final flowing = links.where((link) => link.$1.flow != DiagramFlow.none).toList();
+    final animate = flowing.isNotEmpty && !MediaQuery.disableAnimationsOf(context);
+    if (animate && !_phase.isAnimating) _phase.repeat();
+    if (!animate && _phase.isAnimating) _phase.stop();
     final colors = Theme.of(context).colorScheme;
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(
-              painter: _LinkPainter(links, colors.primary),
+        if (steady.isNotEmpty)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(painter: _LinkPainter(steady, colors.primary)),
             ),
           ),
-        ),
+        if (flowing.isNotEmpty)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: _FlowPainter(flowing, colors.primary, colors.surface,
+                      animate ? _phase : null),
+                  willChange: animate,
+                ),
+              ),
+            ),
+          ),
         for (final (edge, _, labelAt) in links)
           Positioned(
             left: labelAt.dx - 110,
@@ -178,11 +224,7 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
   (String, DiagramSide)? _target;
   Offset? _position;
 
-  double get _radius => 8 / widget.scale;
-  double get _spacing => 8 + _radius;
-
-  Offset _point(Rect rect, DiagramSide side) =>
-      diagramAnchor(rect, side) + _outward(side) * _spacing;
+  double get _radius => math.min(12.0, 8 / widget.scale);
 
   Offset _toPage(Offset global) =>
       (context.findRenderObject()! as RenderBox).globalToLocal(global);
@@ -194,9 +236,9 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
     for (final block in widget.app.blocks) {
       if (block.id == from) continue;
       final rect = widget.app.blockRect(block);
-      if (rect.inflate(_spacing + distance).contains(at)) {
+      if (rect.inflate(_anchorGap + distance).contains(at)) {
         for (final side in DiagramSide.values) {
-          final delta = (_point(rect, side) - at).distance;
+          final delta = (diagramAnchor(rect, side) - at).distance;
           if (delta < distance) {
             distance = delta;
             anchor = (block.id, side);
@@ -269,7 +311,7 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
       for (final b in app.blocks)
         if ((b.isDiagramCard || app.selectedIds.contains(b.id) ||
                 b.id == source?.$1 || b.id == target?.$1) &&
-            widget.visible.overlaps(app.blockRect(b).inflate(_spacing + _radius)))
+            widget.visible.overlaps(app.blockRect(b).inflate(_anchorGap + _radius)))
           b,
     ];
     return Stack(
@@ -292,7 +334,7 @@ class _DiagramAnchorsState extends State<DiagramAnchors> {
   }
 
   Widget _handle(Block b, DiagramSide side, ColorScheme colors, bool target) {
-    final at = _point(widget.app.blockRect(b), side);
+    final at = diagramAnchor(widget.app.blockRect(b), side);
     return Positioned(
       key: ValueKey('connector-anchor-${b.id}-${side.name}'),
       left: at.dx - _radius,
@@ -345,7 +387,7 @@ class _AnchorPreview extends CustomPainter {
 class _LinkPainter extends CustomPainter {
   _LinkPainter(this.links, this.color);
 
-  final List<(DiagramConnection, Path, Offset)> links;
+  final List<_DiagramLink> links;
   final Color color;
 
   @override
@@ -394,6 +436,78 @@ class _LinkPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LinkPainter oldDelegate) => true;
+}
+
+class _FlowPainter extends CustomPainter {
+  _FlowPainter(List<_DiagramLink> links, this.color, this.surface, this.phase)
+      : lines = [
+          for (final (edge, path, _) in links)
+            (edge, path, path.computeMetrics().toList()),
+        ],
+        super(repaint: phase);
+
+  final List<(DiagramConnection, Path, List<ui.PathMetric>)> lines;
+  final Color color;
+  final Color surface;
+  final Animation<double>? phase;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final outline = Paint()
+      ..color = color.withValues(alpha: .48)
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round;
+    final pipe = Paint()
+      ..color = Color.alphaBlend(color.withValues(alpha: .17), surface)
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round;
+    final arrow = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round;
+    const gap = 14.0;
+    final travel = ((phase?.value ?? .5) % 1) * gap;
+    for (final (edge, path, metrics) in lines) {
+      final width = 2.4 * edge.flowWidth;
+      outline.strokeWidth = width + 1.5;
+      pipe.strokeWidth = width;
+      arrow.strokeWidth = width * .18;
+      canvas.drawPath(path, outline);
+      canvas.drawPath(path, pipe);
+      final forward = edge.flow == DiagramFlow.forward;
+      for (final metric in metrics) {
+        final length = metric.length;
+        if (length < 7) continue;
+        final fade = math.min(22.0, length / 2);
+        for (var progressed = travel; progressed < length; progressed += gap) {
+          final tangent = metric.getTangentForOffset(
+              forward ? progressed : length - progressed);
+          if (tangent == null) continue;
+          final direction = forward ? tangent.vector : -tangent.vector;
+          final normal = Offset(-direction.dy, direction.dx);
+          final middle = tangent.position;
+          final tip = middle + direction * (width * .37);
+          final tail = middle - direction * (width * .34);
+          final rise = normal * (width * .27);
+          final start = tail + rise, end = tail - rise;
+          final opacity = math.min(progressed, length - progressed) / fade;
+          final fadeInOut = opacity.clamp(0.0, 1.0);
+          arrow.color = color.withValues(
+              alpha: .95 * fadeInOut * fadeInOut * (3 - 2 * fadeInOut));
+          canvas.drawPath(
+            Path()..moveTo(start.dx, start.dy)
+              ..lineTo(tip.dx, tip.dy)..lineTo(end.dx, end.dy),
+            arrow,
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _FlowPainter oldDelegate) => true;
 }
 
 String _title(AppState app, Block block) {
@@ -458,6 +572,8 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
       : widget.targets.keys.first;
   late DiagramRoute _route = widget.initial?.route ?? DiagramRoute.straight;
   late DiagramStroke _stroke = widget.initial?.stroke ?? DiagramStroke.solid;
+  late DiagramFlow _flow = widget.initial?.flow ?? DiagramFlow.none;
+  late int _flowWidth = widget.initial?.flowWidth ?? 3;
 
   @override
   void dispose() {
@@ -478,6 +594,12 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
         DiagramStroke.dashed => 'Dashed',
         DiagramStroke.dotted => 'Dotted',
         DiagramStroke.doubleLine => 'Double',
+      };
+
+  String _flowLabel(DiagramFlow flow) => switch (flow) {
+        DiagramFlow.none => 'Off',
+        DiagramFlow.forward => 'Forward',
+        DiagramFlow.reverse => 'Reverse',
       };
 
   @override
@@ -522,15 +644,36 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                 ],
                 onChanged: (value) => setState(() => _route = value ?? _route),
               ),
-              DropdownButtonFormField<DiagramStroke>(
-                initialValue: _stroke,
-                decoration: const InputDecoration(labelText: 'Line style'),
+              DropdownButtonFormField<DiagramFlow>(
+                initialValue: _flow,
+                decoration: const InputDecoration(labelText: 'Arrow flow'),
                 items: [
-                  for (final stroke in DiagramStroke.values)
-                    DropdownMenuItem(value: stroke, child: Text(_strokeLabel(stroke))),
+                  for (final flow in DiagramFlow.values)
+                    DropdownMenuItem(value: flow, child: Text(_flowLabel(flow))),
                 ],
-                onChanged: (value) => setState(() => _stroke = value ?? _stroke),
+                onChanged: (value) => setState(() => _flow = value ?? _flow),
               ),
+              if (_flow == DiagramFlow.none)
+                DropdownButtonFormField<DiagramStroke>(
+                  initialValue: _stroke,
+                  decoration: const InputDecoration(labelText: 'Line style'),
+                  items: [
+                    for (final stroke in DiagramStroke.values)
+                      DropdownMenuItem(value: stroke, child: Text(_strokeLabel(stroke))),
+                  ],
+                  onChanged: (value) => setState(() => _stroke = value ?? _stroke),
+                )
+              else
+                DropdownButtonFormField<int>(
+                  initialValue: _flowWidth,
+                  decoration: const InputDecoration(labelText: 'Flow width'),
+                  items: const [
+                    DropdownMenuItem(value: 2, child: Text('2×')),
+                    DropdownMenuItem(value: 3, child: Text('3×')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _flowWidth = value ?? _flowWidth),
+                ),
             ],
           ),
         ),
@@ -556,6 +699,8 @@ class _ConnectionDialogState extends State<_ConnectionDialog> {
                 icon: _icon.text.trim(),
                 route: _route,
                 stroke: _stroke,
+                flow: _flow,
+                flowWidth: _flowWidth,
               ),
               false,
             )),
