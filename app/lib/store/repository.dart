@@ -404,7 +404,7 @@ class Repository {
         p.isWithin(targetPath, sourcePath)) {
       throw StateError('Choose a folder outside the current workspace.');
     }
-    if (await to.list(followLinks: false).isNotEmpty) {
+    if (!await to.list(followLinks: false).isEmpty) {
       throw StateError('Choose an empty folder so existing files are never overwritten.');
     }
     final problem = workspaceWriteProblem(to);
