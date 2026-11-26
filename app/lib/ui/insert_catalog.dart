@@ -462,7 +462,7 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'diagram-card',
       icon: Icons.dashboard_customize_outlined,
-      label: (_) => 'Diagram card',
+      label: (l) => l.insertDiagramCard,
       size: const Size(320, 200),
       run: (context, app, at) async => app.addDiagramCard(at),
     ),

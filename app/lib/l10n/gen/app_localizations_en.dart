@@ -343,6 +343,24 @@ class LEn extends L {
   String get commonBack => 'Back';
 
   @override
+  String get settingsWorkspaceLocation => 'Workspace location';
+
+  @override
+  String get settingsWorkspacePicker => 'Use this folder';
+
+  @override
+  String get settingsWorkspaceCopyTitle => 'Copy workspace to a new folder?';
+
+  @override
+  String get settingsWorkspaceCopyBody => 'Openote will copy its local workspace to this folder and continue working there. The original copy stays in place.';
+
+  @override
+  String get settingsWorkspaceCopyAction => 'Copy and switch';
+
+  @override
+  String get insertDiagramCard => 'Diagram card';
+
+  @override
   String get commonCancel => 'Cancel';
 
   @override

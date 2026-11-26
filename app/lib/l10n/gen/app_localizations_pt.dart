@@ -345,6 +345,24 @@ class LPt extends L {
   String get commonBack => 'Voltar';
 
   @override
+  String get settingsWorkspaceLocation => 'Local da área de trabalho';
+
+  @override
+  String get settingsWorkspacePicker => 'Usar esta pasta';
+
+  @override
+  String get settingsWorkspaceCopyTitle => 'Copiar a área de trabalho para uma nova pasta?';
+
+  @override
+  String get settingsWorkspaceCopyBody => 'O Openote copiará a área de trabalho local para esta pasta e continuará trabalhando nela. A cópia original permanece no lugar.';
+
+  @override
+  String get settingsWorkspaceCopyAction => 'Copiar e mudar';
+
+  @override
+  String get insertDiagramCard => 'Cartão de diagrama';
+
+  @override
   String get commonCancel => 'Cancelar';
 
   @override

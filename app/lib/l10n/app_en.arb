@@ -474,6 +474,30 @@
   "@commonBack": {
     "description": "Button: return to the previous step of a multi-step flow."
   },
+  "settingsWorkspaceLocation": "Workspace location",
+  "@settingsWorkspaceLocation": {
+    "description": "Settings label for the folder containing the local workspace."
+  },
+  "settingsWorkspacePicker": "Use this folder",
+  "@settingsWorkspacePicker": {
+    "description": "Confirmation button in the workspace folder picker."
+  },
+  "settingsWorkspaceCopyTitle": "Copy workspace to a new folder?",
+  "@settingsWorkspaceCopyTitle": {
+    "description": "Title of the dialog that confirms copying the workspace."
+  },
+  "settingsWorkspaceCopyBody": "Openote will copy its local workspace to this folder and continue working there. The original copy stays in place.",
+  "@settingsWorkspaceCopyBody": {
+    "description": "Explains that the local workspace is copied and the original is kept."
+  },
+  "settingsWorkspaceCopyAction": "Copy and switch",
+  "@settingsWorkspaceCopyAction": {
+    "description": "Button that starts the copy and opens the new workspace."
+  },
+  "insertDiagramCard": "Diagram card",
+  "@insertDiagramCard": {
+    "description": "Insert tool for a card with its own canvas."
+  },
   "commonCancel": "Cancel",
   "@commonCancel": {
     "description": "Button: dismiss a dialog without acting."

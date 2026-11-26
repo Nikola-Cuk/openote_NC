@@ -347,6 +347,24 @@ class LEs extends L {
   String get commonBack => 'Atrás';
 
   @override
+  String get settingsWorkspaceLocation => 'Ubicación del espacio de trabajo';
+
+  @override
+  String get settingsWorkspacePicker => 'Usar esta carpeta';
+
+  @override
+  String get settingsWorkspaceCopyTitle => '¿Copiar el espacio de trabajo a otra carpeta?';
+
+  @override
+  String get settingsWorkspaceCopyBody => 'Openote copiará su espacio de trabajo local a esta carpeta y seguirá trabajando allí. La copia original se conserva.';
+
+  @override
+  String get settingsWorkspaceCopyAction => 'Copiar y cambiar';
+
+  @override
+  String get insertDiagramCard => 'Tarjeta de diagrama';
+
+  @override
   String get commonCancel => 'Cancelar';
 
   @override

@@ -103,7 +103,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Future<void> _chooseWorkspace() async {
     final move = app.onChangeWorkspace;
     if (move == null) return;
-    final path = await getDirectoryPath(confirmButtonText: 'Use this folder');
+    final path = await getDirectoryPath(confirmButtonText: L.of(context).settingsWorkspacePicker);
     if (path == null || !mounted) return;
     await showDialog<void>(
       context: context,
@@ -399,7 +399,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           ],
         _Group.connections => [
             if (app.onChangeWorkspace != null)
-              _door(Icons.folder_outlined, 'Workspace location',
+              _door(Icons.folder_outlined, L.of(context).settingsWorkspaceLocation,
                   app.workspacePath, _chooseWorkspace),
             _door(Icons.sync, l.settingsSync, l.settingsSyncHint,
                 () => showSyncDialog(context, app)),
@@ -549,15 +549,14 @@ class _MoveWorkspaceDialogState extends State<_MoveWorkspaceDialog> {
   Widget build(BuildContext context) => PopScope(
         canPop: !_copying,
         child: AlertDialog(
-          title: const Text('Copy workspace to a new folder?'),
+          title: Text(L.of(context).settingsWorkspaceCopyTitle),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SelectableText(widget.path),
               const SizedBox(height: 12),
-              const Text('Openote will copy its local workspace to this folder '
-                  'and continue working there. The original copy stays in place.'),
+              Text(L.of(context).settingsWorkspaceCopyBody),
               if (_copying) ...[
                 const SizedBox(height: 16),
                 const LinearProgressIndicator(),
@@ -572,11 +571,11 @@ class _MoveWorkspaceDialogState extends State<_MoveWorkspaceDialog> {
           actions: [
             TextButton(
               onPressed: _copying ? null : () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
+              child: Text(L.of(context).commonCancel),
             ),
             FilledButton(
               onPressed: _copying ? null : _copy,
-              child: const Text('Copy and switch'),
+              child: Text(L.of(context).settingsWorkspaceCopyAction),
             ),
           ],
         ),

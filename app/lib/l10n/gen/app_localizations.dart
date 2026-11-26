@@ -689,6 +689,42 @@ abstract class L {
   /// **'Cancel'**
   String get commonCancel;
 
+  /// Settings label for the folder containing the local workspace.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace location'**
+  String get settingsWorkspaceLocation;
+
+  /// Confirmation button in the workspace folder picker.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this folder'**
+  String get settingsWorkspacePicker;
+
+  /// Title of the dialog that confirms copying the workspace.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy workspace to a new folder?'**
+  String get settingsWorkspaceCopyTitle;
+
+  /// Explains that the local workspace is copied and the original is kept.
+  ///
+  /// In en, this message translates to:
+  /// **'Openote will copy its local workspace to this folder and continue working there. The original copy stays in place.'**
+  String get settingsWorkspaceCopyBody;
+
+  /// Button that starts the copy and opens the new workspace.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy and switch'**
+  String get settingsWorkspaceCopyAction;
+
+  /// Insert tool for a card with its own canvas.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagram card'**
+  String get insertDiagramCard;
+
   /// Button that dismisses a dialog.
   ///
   /// In en, this message translates to:

@@ -346,6 +346,24 @@ class LIt extends L {
   String get commonBack => 'Indietro';
 
   @override
+  String get settingsWorkspaceLocation => 'Posizione dell’area di lavoro';
+
+  @override
+  String get settingsWorkspacePicker => 'Usa questa cartella';
+
+  @override
+  String get settingsWorkspaceCopyTitle => 'Copiare l’area di lavoro in una nuova cartella?';
+
+  @override
+  String get settingsWorkspaceCopyBody => 'Openote copierà l’area di lavoro locale in questa cartella e continuerà a usarla. L’originale rimane al suo posto.';
+
+  @override
+  String get settingsWorkspaceCopyAction => 'Copia e passa';
+
+  @override
+  String get insertDiagramCard => 'Scheda del diagramma';
+
+  @override
   String get commonCancel => 'Annulla';
 
   @override

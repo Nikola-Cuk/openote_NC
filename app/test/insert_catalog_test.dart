@@ -475,6 +475,7 @@ void main() {
 
     testWidgets('diagram card opens a separate editable page', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
       final host = app.pageId;
       await open(tester);
       await tester.tap(find.text('Diagram card'));

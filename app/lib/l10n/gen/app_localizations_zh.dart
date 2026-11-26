@@ -336,6 +336,24 @@ class LZh extends L {
   String get commonBack => '上一步';
 
   @override
+  String get settingsWorkspaceLocation => '工作区位置';
+
+  @override
+  String get settingsWorkspacePicker => '使用此文件夹';
+
+  @override
+  String get settingsWorkspaceCopyTitle => '将工作区复制到新文件夹？';
+
+  @override
+  String get settingsWorkspaceCopyBody => 'Openote 会将本地工作区复制到此文件夹，然后继续在这里工作。原文件会保留在原处。';
+
+  @override
+  String get settingsWorkspaceCopyAction => '复制并切换';
+
+  @override
+  String get insertDiagramCard => '图表卡片';
+
+  @override
   String get commonCancel => '取消';
 
   @override

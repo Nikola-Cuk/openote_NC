@@ -346,6 +346,24 @@ class LDe extends L {
   String get commonBack => 'Zurück';
 
   @override
+  String get settingsWorkspaceLocation => 'Speicherort des Arbeitsbereichs';
+
+  @override
+  String get settingsWorkspacePicker => 'Diesen Ordner verwenden';
+
+  @override
+  String get settingsWorkspaceCopyTitle => 'Arbeitsbereich in einen neuen Ordner kopieren?';
+
+  @override
+  String get settingsWorkspaceCopyBody => 'Openote kopiert den lokalen Arbeitsbereich in diesen Ordner und arbeitet dort weiter. Das Original bleibt erhalten.';
+
+  @override
+  String get settingsWorkspaceCopyAction => 'Kopieren und wechseln';
+
+  @override
+  String get insertDiagramCard => 'Diagrammkarte';
+
+  @override
   String get commonCancel => 'Abbrechen';
 
   @override

@@ -346,6 +346,24 @@ class LFr extends L {
   String get commonBack => 'Retour';
 
   @override
+  String get settingsWorkspaceLocation => 'Emplacement de l’espace de travail';
+
+  @override
+  String get settingsWorkspacePicker => 'Utiliser ce dossier';
+
+  @override
+  String get settingsWorkspaceCopyTitle => 'Copier l’espace de travail dans un nouveau dossier ?';
+
+  @override
+  String get settingsWorkspaceCopyBody => 'Openote copiera son espace de travail local dans ce dossier et l’utilisera ensuite. L’original reste en place.';
+
+  @override
+  String get settingsWorkspaceCopyAction => 'Copier et basculer';
+
+  @override
+  String get insertDiagramCard => 'Carte de diagramme';
+
+  @override
   String get commonCancel => 'Annuler';
 
   @override
