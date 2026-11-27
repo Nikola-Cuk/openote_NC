@@ -17,6 +17,7 @@ library;
 import '../markdown/md_syntax.dart';
 import 'inline_atom.dart';
 import 'models.dart';
+import 'timeline.dart';
 
 /// What a page adds up to.
 class PageStats {
@@ -163,6 +164,8 @@ List<String> _sourceOf(Block b) {
             for (final row in t.cells) row.join(' ')
         ].join('\n')
       ];
+    case BlockType.timeline:
+      return [for (final event in TimelineEvent.of(b)) event.title];
     case BlockType.table:
       final cells = b.content['cells'];
       if (cells is! List) return const [];

@@ -482,6 +482,7 @@ enum BlockType {
   // An equation with a value plugged into it, and the result — the graph's
   // sibling for a single point rather than a curve. Same `rawType` safety.
   substitute,
+  timeline,
   unknown
 }
 

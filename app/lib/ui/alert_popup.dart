@@ -33,6 +33,7 @@ import '../planner/event_kinds.dart';
 import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import 'reminder_time_picker.dart';
 
 /// How many cards are shown before the rest collapse into a count.
 ///
@@ -225,7 +226,11 @@ class _AlertCard extends StatelessWidget {
               ),
             ]),
             const SizedBox(height: OnoteSpace.x3),
-            Row(children: [
+            Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: OnoteSpace.x2,
+              children: [
               if (alert.join case final join?)
                 Padding(
                   padding: const EdgeInsets.only(right: OnoteSpace.x3),
@@ -240,19 +245,19 @@ class _AlertCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: OnoteSpace.x3),
                   child: TextButton(
-                    onPressed: () {
-                      app.selectPage(alert.pageId!);
-                      app.planner.dismissAlert(alert.id);
-                    },
+                    onPressed: _openNote,
                     child: const Text('Go to the note'),
                   ),
                 ),
-              const Spacer(),
-              if (alert.source == AlertSource.reminder)
+              if (alert.source == AlertSource.reminder) ...[
                 _SnoozeMenu(
                   onSnooze: (d) => app.planner.snoozeAlert(alert.id, d),
                 ),
-              const SizedBox(width: OnoteSpace.x2),
+                TextButton(
+                  onPressed: () => _reschedule(context),
+                  child: const Text('Reschedule'),
+                ),
+              ],
               TextButton(
                 onPressed: () => app.planner.dismissAlert(alert.id),
                 child: const Text('Done'),
@@ -262,6 +267,25 @@ class _AlertCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _reschedule(BuildContext context) async {
+    final at = await pickReminderTime(context, alert.at);
+    if (at != null) app.planner.rescheduleAlert(alert.id, at);
+  }
+
+  Future<void> _openNote() async {
+    final notebook = alert.notebookId;
+    if (notebook != null && notebook != app.notebookId) {
+      if (!app.notebooks.any((entry) => entry.id == notebook)) return;
+      await app.selectNotebook(notebook);
+    }
+    final page = alert.pageId;
+    if (page == null || app.node(page) == null) return;
+    if (app.pageId != page) await app.selectPage(page);
+    final block = alert.blockId;
+    if (block != null && !app.isLocked(page)) app.jumpToBlock(block);
+    app.planner.dismissAlert(alert.id);
   }
 
   Future<void> _join(BuildContext context, JoinLink join) async {

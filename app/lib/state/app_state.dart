@@ -40,6 +40,8 @@ import '../onenote/graph_import.dart';
 import '../onenote/unfinished_import.dart';
 import '../onenote/graph_links.dart';
 import '../model/models.dart';
+import '../model/timeline.dart';
+import '../planner/reminders.dart';
 import '../model/table_conversion.dart';
 import '../store/database.dart'
     show NotebookFileMissing, NotebookFileProblem, notebookFileProblem;
@@ -7664,6 +7666,7 @@ class AppState extends ChangeNotifier
       case BlockType.file:
       case BlockType.flashcard:
       case BlockType.substitute:
+      case BlockType.timeline:
       case BlockType.frame:
         return null;
       case BlockType.unknown:
@@ -9512,6 +9515,131 @@ class AppState extends ChangeNotifier
     if (shape != null) importPage(notebookId!, newPageId, const <Block>[], shape);
   }
 
+  void addTimeline(Offset at) {
+    final nb = notebookId;
+    if (nb == null || pageId == null || notebookIsReadOnly(nb) ||
+        isLocked(pageId!)) return;
+    final timeline = addBlock(Block(
+      type: BlockType.timeline,
+      x: at.dx,
+      y: at.dy,
+      w: timelineDefaultSize.width,
+      h: timelineDefaultSize.height,
+      content: {timelineEventsKey: <Object>[]},
+    ));
+    select(timeline.id);
+  }
+
+  bool canEditTimeline(Block block) {
+    final nb = notebookId, page = pageId;
+    return block.type == BlockType.timeline &&
+        identical(blockById(block.id), block) &&
+        nb != null && page != null && !isLocked(page) && !notebookIsReadOnly(nb);
+  }
+
+  String _timelineReminderId(Block block, TimelineEvent event) =>
+      'timeline:$notebookId:$pageId:${block.id}:${event.id}';
+
+  Reminder? timelineReminder(Block block, TimelineEvent event) =>
+      planner.reminders.byId(_timelineReminderId(block, event));
+
+  void saveTimelineEvent(Block block, TimelineEvent event,
+      {DateTime? reminderAt, bool changeReminder = false}) {
+    if (!canEditTimeline(block) || event.title.trim().isEmpty) return;
+    final events = TimelineEvent.of(block);
+    final previous = events.where((e) => e.id == event.id).firstOrNull;
+    if (previous == null ||
+        previous.title != event.title || previous.day != event.day) {
+      pushUndo();
+      _setTimelineEvents(block, [
+        ...events.where((e) => e.id != event.id),
+        TimelineEvent(id: event.id, title: event.title.trim(), day: event.day,
+            canvasPageId: previous?.canvasPageId),
+      ]);
+    }
+    final key = _timelineReminderId(block, event);
+    if (changeReminder) {
+      planner.removeReminder(key);
+      if (reminderAt != null) {
+        planner.reminders.add(
+          id: key, text: event.title, at: reminderAt,
+          notebookId: notebookId, pageId: pageId, blockId: block.id,
+        );
+      }
+    } else {
+      planner.reminders.rename(key, event.title);
+    }
+  }
+
+  void removeTimelineEvent(Block block, TimelineEvent event) {
+    if (!canEditTimeline(block)) return;
+    final events = TimelineEvent.of(block);
+    if (!events.any((entry) => entry.id == event.id)) return;
+    pushUndo();
+    _setTimelineEvents(block, events.where((entry) => entry.id != event.id));
+    planner.removeReminder(_timelineReminderId(block, event));
+  }
+
+  void _setTimelineEvents(Block block, Iterable<TimelineEvent> events) {
+    block.content[timelineEventsKey] = [for (final event in events) event.toJson()];
+    updateBlock(block);
+  }
+
+  Future<void> openTimelineCanvas(Block block, TimelineEvent event) async {
+    if (!identical(blockById(block.id), block) || pageId == null) return;
+    final events = TimelineEvent.of(block);
+    final current = events.where((entry) => entry.id == event.id).firstOrNull;
+    if (current == null) return;
+    final linked = node(current.canvasPageId);
+    if (linked != null) {
+      await selectPage(linked.id);
+      return;
+    }
+    if (!canEditTimeline(block)) return;
+    final canvasPage = _createCanvasSubpage(current.title);
+    if (canvasPage == null) return;
+    _setTimelineEvents(block, [
+      for (final entry in events)
+        if (entry.id == current.id)
+          TimelineEvent(
+            id: current.id, title: current.title, day: current.day,
+            canvasPageId: canvasPage.id,
+          )
+        else
+          entry,
+    ]);
+    await selectPage(canvasPage.id);
+  }
+
+  TreeNode? _createCanvasSubpage(String title) {
+    final nb = notebookId;
+    final parent = node(pageId);
+    final section = parent?.parentId;
+    if (nb == null || parent == null || section == null) return null;
+    final pages = pagesOf(section);
+    final index = pages.indexWhere((page) => page.id == parent.id);
+    if (index < 0) return null;
+    var insertAt = index + 1;
+    while (insertAt < pages.length && pages[insertAt].level > parent.level) {
+      insertAt++;
+    }
+    final canvasPage = TreeNode(
+      kind: NodeKind.page,
+      parentId: section,
+      title: title,
+      level: (parent.level + 1).clamp(0, 2),
+      position: _nextPosition(),
+    );
+    final ordered = [...pages]..insert(insertAt, canvasPage);
+    var sequence = nowMs();
+    for (final page in ordered) {
+      page.position = 'a${(sequence++).toString().padLeft(15, '0')}';
+      _putNode(nb, page);
+    }
+    reloadNodes();
+    return canvasPage;
+  }
+
   void addDiagramCard(Offset at) {
     final nb = notebookId;
     if (nb == null || pageId == null || notebookIsReadOnly(nb)) return;
@@ -9537,27 +9665,13 @@ class AppState extends ChangeNotifier
     final section = parent.parentId;
     if (section == null) return;
     final pages = pagesOf(section);
-    final position = pages.indexWhere((page) => page.id == parent.id);
-    if (position < 0) return;
     final existingTitles = pages.map((page) => page.title).toSet();
     var number = 1;
     while (existingTitles.contains('Card canvas $number')) {
       number++;
     }
-    final canvasPage = TreeNode(
-      kind: NodeKind.page,
-      parentId: section,
-      title: 'Card canvas $number',
-      level: (parent.level + 1).clamp(0, 2),
-      position: _nextPosition(),
-    );
-    final ordered = [...pages]..insert(position + 1, canvasPage);
-    var sequence = nowMs();
-    for (final page in ordered) {
-      page.position = 'a${(sequence++).toString().padLeft(15, '0')}';
-      _putNode(nb, page);
-    }
-    reloadNodes();
+    final canvasPage = _createCanvasSubpage('Card canvas $number');
+    if (canvasPage == null) return;
     pushUndo();
     card.content[Block.diagramCanvasKey] = canvasPage.id;
     updateBlock(card);
@@ -10967,6 +11081,12 @@ class AppState extends ChangeNotifier
   void removeBlock(String id, {bool recordUndo = true}) {
     if (blockById(id)?.textLocked ?? false) return;
     if (recordUndo) pushUndo();
+    final removed = blockById(id);
+    if (removed != null && removed.type == BlockType.timeline) {
+      for (final event in TimelineEvent.of(removed)) {
+        planner.removeReminder(_timelineReminderId(removed, event));
+      }
+    }
     blocks.removeWhere((b) => b.id == id);
     _newDiagramCards.remove(id);
     _removeConnectionsTo({id});
@@ -10983,6 +11103,12 @@ class AppState extends ChangeNotifier
   void removeSelected() {
     if (selectedIds.isEmpty || selectionHasLockedText) return;
     pushUndo();
+    for (final block in blocks.where(
+        (b) => selectedIds.contains(b.id) && b.type == BlockType.timeline)) {
+      for (final event in TimelineEvent.of(block)) {
+        planner.removeReminder(_timelineReminderId(block, event));
+      }
+    }
     blocks.removeWhere((b) => selectedIds.contains(b.id));
     _newDiagramCards.removeAll(selectedIds);
     _removeConnectionsTo(selectedIds);
@@ -11573,6 +11699,7 @@ class AppState extends ChangeNotifier
                 for (final row in t.cells) row.join(' ')
             ].join('\n');
           }(),
+        BlockType.timeline => timelineSummary(b),
         BlockType.code => b.content['source'] as String? ?? '',
         BlockType.math =>
           '${b.content['latex'] ?? ''} ${b.content['linearSource'] ?? ''}',

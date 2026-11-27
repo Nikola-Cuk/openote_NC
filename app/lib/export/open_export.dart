@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import '../math/substitute.dart';
 import '../model/models.dart';
+import '../model/timeline.dart';
 import '../state/app_state.dart';
 import 'md_common.dart';
 
@@ -258,6 +259,9 @@ _Markdown _pageMarkdown(String title, List<Block> blocks, String assetPrefix) {
         if (gtex.isNotEmpty) {
           buf.writeln('Graph of:\n\n\$\$\n$gtex\n\$\$\n');
         }
+      case BlockType.timeline:
+        buf.writeln(timelineSummary(b));
+        buf.writeln();
       case BlockType.substitute:
         // Same reasoning as a graph: what travels is the equation, plus
         // whatever value was last plugged into it.
@@ -335,6 +339,11 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
           'id': b.id,
           'type': 'text',
           'text': 'Graph of \$${b.content['latex'] ?? ''}\$',
+          'x': x, 'y': y, 'width': w, 'height': h,
+        });
+      case BlockType.timeline:
+        nodes.add({
+          'id': b.id, 'type': 'text', 'text': timelineSummary(b),
           'x': x, 'y': y, 'width': w, 'height': h,
         });
       case BlockType.substitute:

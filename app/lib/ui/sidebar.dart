@@ -357,6 +357,7 @@ class _SidebarState extends State<Sidebar> {
       builder: (context) => ListenableBuilder(
         listenable: app,
         builder: (context, _) => Dialog(
+          constraints: const BoxConstraints(),
           child: SizedBox(
             width: app.navPagesW + (app.navSectionsCollapsed ? 0 : app.navSectionsW) + 6,
             height: 540,

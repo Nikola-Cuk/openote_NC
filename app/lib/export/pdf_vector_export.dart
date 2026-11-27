@@ -40,6 +40,7 @@ import '../media/pdf_pages.dart';
 import '../math/graph_plot.dart';
 import '../math/substitute.dart';
 import '../model/models.dart';
+import '../model/timeline.dart';
 import '../model/inline_atom.dart';
 import '../state/app_state.dart';
 import 'md_common.dart';
@@ -382,6 +383,7 @@ pw.Widget? _blockWidget(AppState app, Block b, double sheetTop,
     BlockType.embed => _embedWidget(app, b, h),
     BlockType.graph => _graphWidget(b, h),
     BlockType.substitute => _substituteWidget(b),
+    BlockType.timeline => pw.Text(timelineSummary(b)),
     _ => null,
   };
   if (child == null) return null;

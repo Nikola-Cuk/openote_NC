@@ -16,6 +16,7 @@ import '../editor/image_block_view.dart';
 import '../editor/math_block_view.dart';
 import '../editor/table_block_view.dart';
 import '../editor/text_block_view.dart';
+import '../editor/timeline_block_view.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -650,6 +651,7 @@ class _BlockViewState extends State<BlockView> {
         'Flashcard: ${b.content['front'] ?? 'empty'}',
       BlockType.embed => 'Window to another page',
       BlockType.board => 'Task board',
+      BlockType.timeline => 'Timeline',
       BlockType.graph => 'Graph of ${b.content['latex'] ?? 'an equation'}',
       BlockType.substitute =>
         'Evaluate ${b.content['latex'] ?? 'an equation'}',
@@ -687,10 +689,12 @@ class _BlockViewState extends State<BlockView> {
     if (width) {
       // Manual resize locks the width (text boxes stop auto-growing).
       if (b.type == BlockType.text) b.content['autoWidth'] = false;
-      b.w = (b.w + d.delta.dx).clamp(b.isDiagramCard ? 160.0 : 80.0, 4000.0);
+      final minWidth = b.type == BlockType.timeline ? 210.0 : b.isDiagramCard ? 160.0 : 80.0;
+      b.w = (b.w + d.delta.dx).clamp(minWidth, 4000.0);
     }
     if (height) {
-      b.h = (oldH + d.delta.dy).clamp(b.isDiagramCard ? 88.0 : 40.0, 4000.0);
+      final minHeight = b.type == BlockType.timeline ? 260.0 : b.isDiagramCard ? 88.0 : 40.0;
+      b.h = (oldH + d.delta.dy).clamp(minHeight, 4000.0);
     }
 
     if (b.type == BlockType.ink) {
@@ -798,6 +802,7 @@ class _BlockViewState extends State<BlockView> {
               : null,
           onUnlock: (pageId) => confirmWindowOnto(context, app, pageId)),
       BlockType.board => BoardBlockView(block: b, app: app),
+      BlockType.timeline => TimelineBlockView(block: b, app: app),
       BlockType.graph => GraphBlockView(block: b, app: app),
       BlockType.substitute => SubstituteBlockView(block: b, app: app),
       _ => Padding(
@@ -874,7 +879,7 @@ class _BlockViewState extends State<BlockView> {
         onPanEnd: editing || _locked ? null : _bodyDragEnd,
         child: Container(
           width: displayW,
-          height: b.h ?? (b.isDiagramCard ? 200 : null),
+          height: b.h ?? (b.isDiagramCard ? 200 : b.type == BlockType.timeline ? 280 : null),
           constraints: const BoxConstraints(minHeight: 36),
           decoration: !_pendingEmpty
               ? BoxDecoration(

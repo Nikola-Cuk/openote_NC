@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'inline_atom.dart';
 import 'models.dart';
+import 'timeline.dart';
 
 /// **How tall a block will draw, without drawing it.**
 ///
@@ -55,6 +56,7 @@ double estimateBlockHeight(Block b) => switch (b.type) {
       BlockType.table =>
         estimateTableHeight(TableData.from(b.content), b.w - 20) + 16,
       BlockType.image => _imageHeight(b),
+      BlockType.timeline => timelineDefaultSize.height,
       _ => 60,
     };
 

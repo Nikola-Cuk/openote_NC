@@ -937,6 +937,24 @@ class PlannerState extends ChangeNotifier {
   /// this replaced. "Done" used to clear the on-screen list only, so the badge
   /// stayed lit, the row stayed in the agenda, and the button read as broken.
   /// For an event it means only "shown"; Openote never writes to a calendar.
+  void rescheduleAlert(String id, DateTime at) {
+    final reminder = reminders.byId(id);
+    if (reminder == null || reminder.dismissed) return;
+    _removePendingReminder(id);
+    reminders.reschedule(id, at);
+  }
+
+  void removeReminder(String id) {
+    _removePendingReminder(id);
+    reminders.remove(id);
+  }
+
+  void _removePendingReminder(String id) {
+    pendingAlerts.removeWhere((alert) =>
+        alert.id == id && alert.source == AlertSource.reminder);
+    if (pendingAlerts.isEmpty) alertsWereMissed = false;
+  }
+
   void dismissAlert(String id) {
     final i = pendingAlerts.indexWhere((a) => a.id == id);
     if (i < 0) return;

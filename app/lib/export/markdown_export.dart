@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../math/substitute.dart';
 import '../model/models.dart';
+import '../model/timeline.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
 import 'md_common.dart';
@@ -150,6 +151,9 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         // does, and it is why this one is here.
         final latex = b.content['latex'] as String? ?? '';
         if (latex.isNotEmpty) buf.writeln('Graph of \$$latex\$\n');
+      case BlockType.timeline:
+        buf.writeln(timelineSummary(b));
+        buf.writeln();
       case BlockType.substitute:
         // Same reasoning as a graph: Markdown has no live input box, so this
         // carries the equation and the value last typed into it, which is

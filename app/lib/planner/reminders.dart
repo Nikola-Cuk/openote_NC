@@ -403,6 +403,14 @@ class ReminderStore {
   /// Clearing [Reminder.fired] is the point: re-dating something that has
   /// already been shown must make it shown again, or the planner's "re-date"
   /// action would silently produce a reminder that never fires.
+  void rename(String id, String text) {
+    final reminder = byId(id);
+    final title = text.trim();
+    if (reminder == null || reminder.text == title) return;
+    reminder.text = title;
+    _persist();
+  }
+
   void reschedule(String id, DateTime at, [DateTime? now]) {
     final r = byId(id);
     if (r == null) return;

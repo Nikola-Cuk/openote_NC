@@ -69,9 +69,7 @@ void main() {
       final l = await _translations(tester);
       expect(kInsertGroups.map((g) => g.title(l)).toList(),
           ['Write', 'Bring in', 'Link up']);
-      // Twelve until page templates were removed in favour of duplicating a
-      // page: a layout is not a thing you INSERT at a point anyway.
-      expect(kInsertItems.length, 12);
+      expect(kInsertItems.length, 13);
     });
 
     test('the ribbon is one row, in the order the owner asked for', () {
@@ -87,7 +85,7 @@ void main() {
       // picture.
       expect(kInsertRibbon.map((i) => i.id).toList(), [
         'equation', 'code', 'pdf', 'table', 'image', 'video',
-        'file', 'flashcard', 'board', 'pagelink', 'portal', 'diagram-card',
+        'file', 'flashcard', 'board', 'pagelink', 'portal', 'diagram-card', 'timeline',
       ]);
     });
 
@@ -114,7 +112,7 @@ void main() {
       final menu = kMenuGroups.expand((g) => g.items).map((i) => i.id).toSet();
       expect(kInsertItems.map((i) => i.id), contains('flashcard'));
       expect(menu.contains('flashcard'), isFalse);
-      expect(menu.length, 11);
+      expect(menu.length, 12);
     });
 
     // Through `L`, because the catalog's words moved into the .arb: the

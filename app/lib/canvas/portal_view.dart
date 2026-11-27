@@ -353,6 +353,8 @@ class PortalContent extends StatelessWidget {
         return GraphBlockView(block: b, app: app);
       case BlockType.substitute:
         return SubstituteBlockView(block: b, app: app);
+      case BlockType.timeline:
+        return _chip(context, Icons.timeline, 'Timeline');
       case BlockType.board:
         // A picture of a board: dragging cards through a window would be a
         // write to the source page.
